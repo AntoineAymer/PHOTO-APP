@@ -1774,7 +1774,6 @@ async def rooms_history(db=Depends(get_db)):
         ans_count = 0
         correct_count = 0
         if player_ids:
-            from sqlalchemy import func
             ac = await db.execute(
                 select(func.count(PlayerAnswer.id), func.sum(PlayerAnswer.is_correct.cast(Integer)))
                 .where(PlayerAnswer.player_id.in_(player_ids))
