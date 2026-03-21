@@ -1,0 +1,1043 @@
+{% extends "base.html" %}
+{% block title %}PhotoFrame — Play{% endblock %}
+{% block head %}
+<style>
+    /* Player UI — same dark theme as admin, design system tokens only */
+    .player-app {
+        display: flex;
+        flex-direction: column;
+        min-height: 100vh;
+        min-height: 100dvh;
+        padding: var(--sp-xl);
+        max-width: 480px;
+        margin: 0 auto;
+    }
+    /* Game screen: full bleed */
+    .player-app:has(#screen-game.active) {
+        max-width: none;
+        padding: 0;
+    }
+
+    .screen { display: none; flex-direction: column; flex: 1; }
+    .screen.active { display: flex; }
+
+    /* ── Join screens ── */
+    .join-branding {
+        text-align: center;
+        padding-top: 48px;
+        margin-bottom: var(--sp-lg);
+    }
+    .join-branding .app-logo {
+        font-family: var(--font-heading);
+        font-size: var(--fs-display);
+        font-weight: 800;
+        color: var(--accent-light-blue);
+    }
+    .join-branding .experience-name {
+        font-family: var(--font-heading);
+        font-size: var(--fs-xl);
+        font-weight: 700;
+        color: var(--text-primary);
+        margin-top: var(--sp-sm);
+    }
+
+    .join-form {
+        display: flex;
+        flex-direction: column;
+        gap: var(--sp-lg);
+        flex: 1;
+        padding-top: var(--sp-lg);
+    }
+    .join-card {
+        background: var(--bg-card);
+        border: 1px solid var(--border-color);
+        border-radius: var(--radius-lg);
+        padding: var(--sp-xl);
+    }
+    .join-card .join-label {
+        color: var(--text-secondary);
+        font-size: var(--fs-lg);
+        margin-bottom: var(--sp-md);
+        text-align: center;
+    }
+
+    /* ── Status banners ── */
+    .instruction {
+        text-align: center;
+        font-size: var(--fs-xl);
+        font-weight: var(--fw-bold);
+        font-family: var(--font-heading);
+        padding: var(--sp-lg);
+        border-radius: var(--radius-lg);
+        margin-bottom: var(--sp-lg);
+        animation: slideUp 0.3s ease;
+    }
+    .instruction.waiting { background: var(--color-info-bg); color: var(--color-info); }
+    .instruction.correct { background: var(--color-success-bg); color: var(--color-success); }
+    .instruction.wrong { background: var(--color-error-bg); color: var(--color-error); }
+    .instruction.paused { background: var(--color-warning-bg); color: var(--color-warning); }
+    .instruction.disconnected { background: var(--color-error-bg); color: var(--color-error); }
+
+    /* ── Quiz screen ── */
+    .quiz-photo {
+        width: 100%;
+        flex: 1 1 0;
+        min-height: 0;
+        position: relative;
+        background: #000;
+        overflow: hidden;
+    }
+    .quiz-photo img {
+        width: 100%;
+        height: 100%;
+        object-fit: contain;
+    }
+    .question-badge {
+        position: absolute;
+        top: 8px;
+        left: 50%;
+        transform: translateX(-50%);
+        z-index: 2;
+        background: rgba(0,0,0,0.6);
+        backdrop-filter: blur(8px);
+        -webkit-backdrop-filter: blur(8px);
+        color: #fff;
+        font-size: var(--fs-md);
+        font-weight: var(--fw-bold);
+        padding: var(--sp-xs) var(--sp-lg);
+        border-radius: var(--radius-pill);
+    }
+    .player-timer {
+        position: absolute;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        z-index: 2;
+    }
+    .player-timer .timer-bar { height: 8px; border-radius: 0; }
+    .player-timer .timer-text {
+        position: absolute;
+        bottom: 12px;
+        right: 12px;
+        font-size: var(--fs-md);
+        color: #fff;
+        text-shadow: 0 1px 4px rgba(0,0,0,0.8);
+        font-weight: 700;
+    }
+
+    /* Instruction bar between photo and answers */
+    .game-instruction-bar {
+        text-align: center;
+        font-size: var(--fs-md);
+        font-weight: var(--fw-bold);
+        color: var(--text-secondary);
+        padding: var(--sp-sm) var(--sp-md);
+        background: var(--bg-surface);
+    }
+
+    /* ── Answer buttons — use design system answer colors ── */
+    .answer-area {
+        display: flex;
+        flex-direction: column;
+        gap: 0;
+        flex-shrink: 0;
+    }
+    .answer-card {
+        position: relative;
+        display: flex;
+        align-items: center;
+        gap: var(--sp-md);
+        min-height: var(--player-button-height);
+        padding: var(--sp-md) var(--sp-lg);
+        border: none;
+        cursor: pointer;
+        color: #fff;
+        font-family: var(--font-heading);
+        font-size: var(--fs-player-button);
+        font-weight: 700;
+        touch-action: manipulation;
+        -webkit-tap-highlight-color: transparent;
+        transition: transform 0.1s ease, opacity 0.15s;
+    }
+    .answer-card .card-shape {
+        font-size: 24px;
+        flex-shrink: 0;
+        width: 36px;
+        text-align: center;
+    }
+    .answer-card .card-label {
+        flex: 1;
+        text-align: left;
+        line-height: 1.3;
+        word-break: break-word;
+    }
+    .answer-card .card-label.long { font-size: 15px; }
+
+    /* Colors from design system */
+    .answer-card.ans-a { background: var(--answer-a); }
+    .answer-card.ans-b { background: var(--answer-b); }
+    .answer-card.ans-c { background: var(--answer-c); }
+    .answer-card.ans-d { background: var(--answer-d); }
+
+    .answer-card:active:not(.locked) { transform: scale(0.97); opacity: 0.85; }
+
+    .answer-card.selected { outline: 4px solid #fff; outline-offset: -4px; }
+    .answer-card.selected::after {
+        content: '\2713';
+        position: absolute;
+        right: var(--sp-lg);
+        font-size: 24px;
+        font-weight: 800;
+    }
+    .answer-card.locked { pointer-events: none; }
+    .answer-card.locked:not(.selected) { opacity: 0.35; }
+
+    .answer-card { animation: slideIn 0.2s ease backwards; }
+    .answer-card:nth-child(1) { animation-delay: 0.02s; }
+    .answer-card:nth-child(2) { animation-delay: 0.06s; }
+    .answer-card:nth-child(3) { animation-delay: 0.1s; }
+    .answer-card:nth-child(4) { animation-delay: 0.14s; }
+    @keyframes slideIn {
+        from { opacity: 0; transform: translateX(-16px); }
+        to { opacity: 1; transform: translateX(0); }
+    }
+
+    /* ── Centered info screens (waiting, watching, paused, disconnected) ── */
+    .centered-screen {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        flex: 1;
+        text-align: center;
+        gap: var(--sp-lg);
+    }
+    .status-icon {
+        width: 80px;
+        height: 80px;
+        border-radius: 50%;
+        background: var(--bg-surface);
+        border: 1px solid var(--border-color);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 36px;
+    }
+    .status-icon.pulse { animation: pulse 1.5s ease-in-out infinite; }
+    .status-name {
+        font-family: var(--font-heading);
+        font-size: var(--fs-lg);
+        color: var(--text-muted);
+    }
+
+    /* ── Leaderboard ── */
+    .my-rank {
+        text-align: center;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        flex: 1;
+        gap: var(--sp-sm);
+    }
+    .my-rank .rank-number {
+        font-size: 72px;
+        font-weight: 800;
+        color: var(--accent-light-blue);
+        font-family: var(--font-heading);
+        line-height: 1;
+    }
+    .my-rank .rank-label {
+        font-size: var(--fs-lg);
+        color: var(--text-muted);
+    }
+    .my-rank .rank-score {
+        font-size: 24px;
+        font-weight: 700;
+        color: var(--color-warning);
+        font-family: var(--font-heading);
+    }
+
+    /* ── Game over ── */
+    .gameover-content {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        flex: 1;
+        text-align: center;
+        gap: var(--sp-md);
+    }
+    .gameover-trophy { font-size: 72px; animation: scaleIn 0.5s ease; }
+    .gameover-title {
+        font-family: var(--font-heading);
+        font-size: 28px;
+        font-weight: 800;
+        color: var(--text-primary);
+    }
+    .gameover-rank {
+        font-size: 64px;
+        font-weight: 800;
+        color: var(--accent-light-blue);
+        font-family: var(--font-heading);
+        line-height: 1;
+    }
+    .gameover-rank-label {
+        font-size: var(--fs-lg);
+        color: var(--text-muted);
+    }
+    .gameover-score {
+        font-size: 28px;
+        font-weight: 700;
+        color: var(--color-warning);
+        font-family: var(--font-heading);
+    }
+
+    /* ── Error ── */
+    .error-msg {
+        background: var(--color-error-bg);
+        color: var(--color-error);
+        padding: var(--sp-md) var(--sp-lg);
+        border-radius: var(--radius-md);
+        text-align: center;
+        font-size: var(--fs-md);
+        animation: slideUp 0.2s ease;
+    }
+
+    /* Submitted screen */
+    .submitted-content {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        flex: 1;
+        text-align: center;
+        gap: var(--sp-lg);
+    }
+    .submitted-check {
+        width: 72px;
+        height: 72px;
+        border-radius: 50%;
+        background: var(--color-success-bg);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 36px;
+        animation: scaleIn 0.3s ease;
+    }
+    .submitted-answer-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: var(--sp-sm);
+        padding: var(--sp-md) var(--sp-xl);
+        border-radius: var(--radius-lg);
+        font-family: var(--font-heading);
+        font-size: var(--fs-player-button);
+        font-weight: 700;
+        color: #fff;
+    }
+    .submitted-answer-badge.ans-a { background: var(--answer-a); }
+    .submitted-answer-badge.ans-b { background: var(--answer-b); }
+    .submitted-answer-badge.ans-c { background: var(--answer-c); }
+    .submitted-answer-badge.ans-d { background: var(--answer-d); }
+
+    /* Score feedback (reveal screen fallback) */
+    .score-feedback { text-align: center; padding: var(--sp-xl); }
+    .score-big {
+        font-size: 48px;
+        font-weight: var(--fw-bold);
+        font-family: var(--font-heading);
+    }
+    .score-big.positive { color: var(--color-success); }
+    .score-big.zero { color: var(--text-muted); }
+    .score-total {
+        font-size: var(--fs-lg);
+        color: var(--text-secondary);
+        margin-top: var(--sp-sm);
+    }
+    .result-icon { font-size: 64px; text-align: center; margin-bottom: var(--sp-lg); }
+
+    /* Waiting dots */
+    .waiting-dots::after { content: ''; animation: dots 1.5s infinite; }
+    @keyframes dots {
+        0%, 20% { content: ''; }
+        40% { content: '.'; }
+        60% { content: '..'; }
+        80%, 100% { content: '...'; }
+    }
+</style>
+{% endblock %}
+
+{% block body %}
+<div class="player-app">
+
+    <!-- SCREEN 1: Enter room code (only if no code in URL) -->
+    <div id="screen-join-code" class="screen {{ 'active' if not room_code else '' }}">
+        <div class="join-branding">
+            <div class="app-logo" data-t="shadow_game">Shadow Game</div>
+        </div>
+        <div class="join-form">
+            <div class="join-card">
+                <div class="join-label" data-t="player.enter_code">Enter the room code</div>
+                <input id="input-code" class="input input-large" type="text"
+                       maxlength="5" placeholder="ABCDE" autocomplete="off"
+                       autocapitalize="characters" spellcheck="false"
+                       data-t-placeholder="player.code_placeholder"
+                       value="{{ room_code }}">
+                <div id="code-error" class="error-msg hidden" style="margin-top:var(--sp-sm);"></div>
+                <button class="btn btn-primary btn-large w-full" style="margin-top:var(--sp-xl);" onclick="goToNickname()" data-t="player.next">Next</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- SCREEN 2: Pick a nickname (first screen from QR) -->
+    <div id="screen-join-name" class="screen {{ 'active' if room_code else '' }}">
+        <div class="join-branding">
+            <div class="experience-name" id="experience-name-display"></div>
+            <div style="font-size:var(--fs-sm); color:var(--text-muted); margin-top:var(--sp-xs);">
+                Room: <strong id="join-room-code">{{ room_code }}</strong>
+            </div>
+        </div>
+        <div class="join-form">
+            <a href="#" onclick="showScreen('screen-join-code'); return false;"
+               style="color:var(--accent-light-blue); font-size:var(--fs-md); text-decoration:none;"
+               data-t="player.back">&larr; Back</a>
+            <div class="join-card">
+                <div class="join-label" data-t="player.enter_nickname">Pick a nickname</div>
+                <input id="input-nickname" class="input input-large" type="text"
+                       maxlength="20" placeholder="e.g. Lisa M" autocomplete="off"
+                       autocapitalize="words" enterkeyhint="go"
+                       data-t-placeholder="player.nickname_placeholder">
+                <div id="name-error" class="error-msg hidden" style="margin-top:var(--sp-sm);"></div>
+                <button class="btn btn-primary btn-large w-full" style="margin-top:var(--sp-xl);" onclick="joinRoom()" data-t="player.join">Join</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- SCREEN 3: Waiting for host -->
+    <div id="screen-waiting" class="screen">
+        <div class="centered-screen">
+            <div class="status-icon pulse">&#9203;</div>
+            <div class="instruction waiting">
+                <span id="waiting-text" class="waiting-dots" data-t="player.waiting">Waiting for the host to start</span>
+            </div>
+            <div class="status-name" id="player-name-display"></div>
+        </div>
+    </div>
+
+    <!-- SCREEN 4: Game (quiz photo + answers) -->
+    <div id="screen-game" class="screen">
+        <div class="quiz-photo" id="quiz-photo">
+            <div class="question-badge" id="question-badge"></div>
+            <img id="quiz-photo-img" src="" alt="">
+            <div class="player-timer" id="timer-container">
+                <div class="timer-bar">
+                    <div class="timer-bar-fill" id="timer-fill" style="width: 100%"></div>
+                </div>
+                <div class="timer-text" id="timer-text"></div>
+            </div>
+        </div>
+        <div class="game-instruction-bar" id="game-instruction" data-t="player.answer_now">
+            Tap your answer!
+        </div>
+        <div class="answer-area" id="answers-area"></div>
+    </div>
+
+    <!-- SCREEN 5: Answer submitted -->
+    <div id="screen-submitted" class="screen">
+        <div class="submitted-content">
+            <div class="submitted-check">&#10003;</div>
+            <div class="instruction waiting" data-t="player.answer_locked">Answer locked in!</div>
+            <div class="submitted-answer-badge" id="submitted-answer-display"></div>
+            <div class="text-muted waiting-dots" style="font-size:var(--fs-md);" data-t="player.waiting_results">Waiting for results</div>
+        </div>
+    </div>
+
+    <!-- SCREEN 6: Reveal result (fallback) -->
+    <div id="screen-reveal" class="screen">
+        <div class="result-icon" id="result-icon"></div>
+        <div class="instruction" id="result-instruction"></div>
+        <div class="score-feedback">
+            <div class="score-big" id="result-points"></div>
+            <div class="score-total" id="result-total"></div>
+        </div>
+    </div>
+
+    <!-- SCREEN 7: Watching slideshow -->
+    <div id="screen-watching" class="screen">
+        <div class="centered-screen">
+            <img id="watching-photo" style="display:none; max-width:90%; max-height:50vh; border-radius:12px; margin-bottom:16px; object-fit:contain;">
+            <div class="status-icon" id="watching-icon">&#127748;</div>
+            <div class="instruction waiting" id="watching-text" data-t="player.watching">
+                Enjoy the slideshow
+            </div>
+            <div class="status-name" id="watching-name-display"></div>
+        </div>
+    </div>
+
+    <!-- SCREEN 8: Paused -->
+    <div id="screen-paused" class="screen">
+        <div class="centered-screen">
+            <div class="status-icon">&#9208;</div>
+            <div class="instruction paused" data-t="player.paused">Paused by host</div>
+        </div>
+    </div>
+
+    <!-- SCREEN 9: Disconnected -->
+    <div id="screen-disconnected" class="screen">
+        <div class="centered-screen">
+            <div class="status-icon pulse">&#128268;</div>
+            <div class="instruction disconnected" data-t="player.disconnected">
+                Connection lost. Trying to reconnect... Don't close this page.
+            </div>
+            <div style="display:flex; flex-direction:column; gap:var(--sp-md); width:100%; max-width:280px; margin-top:var(--sp-lg);">
+                <button class="btn btn-primary btn-large w-full" onclick="retryConnection()" data-t="player.retry">Try again</button>
+                <a href="/" class="btn btn-secondary btn-large w-full" style="text-align:center;" data-t="player.go_home">Back to Home</a>
+            </div>
+        </div>
+    </div>
+
+    <!-- SCREEN 10: Leaderboard -->
+    <div id="screen-leaderboard" class="screen">
+        <div class="my-rank">
+            <div class="rank-label" id="lb-label" data-t="player.your_rank">Your Rank</div>
+            <div class="rank-number" id="lb-rank">#1</div>
+            <div class="rank-score" id="lb-score"></div>
+        </div>
+    </div>
+
+    <!-- SCREEN 11: Game Over -->
+    <div id="screen-gameover" class="screen">
+        <div class="gameover-content">
+            <div class="gameover-trophy">&#127942;</div>
+            <div class="gameover-title" data-t="player.game_over">Game Over!</div>
+            <div class="gameover-rank" id="gameover-rank">#1</div>
+            <div class="gameover-rank-label" data-t="player.your_final_rank">Your final rank</div>
+            <div class="gameover-score" id="gameover-score"></div>
+            <a href="/" class="btn btn-secondary btn-large" style="margin-top:var(--sp-xl);" data-t="player.back_home">Back to Home</a>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    // State
+    let socket;
+    let roomCode = "{{ room_code }}";
+    const isPreview = new URLSearchParams(window.location.search).get('preview') === '1';
+    let playerNickname = "";
+    let playerId = null;
+    let myScore = 0;
+    let currentSlide = null;
+    let timerInterval = null;
+    let timerDuration = 0;
+    let timerStartedAt = 0;
+    let hasAnswered = false;
+    let selectedAnswer = null;
+    let previousScreen = null;
+    let questionNumber = 0;
+    let isRevealed = false;
+
+    // Shapes paired with each answer color (accessibility: never color alone)
+    const CARD_SHAPES = {
+        a: '\u25B2',  // Triangle
+        b: '\u25CF',  // Circle
+        c: '\u25C6',  // Diamond
+        d: '\u2605',  // Star
+    };
+
+    // Screen management
+    function showScreen(id) {
+        document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+        const screen = document.getElementById(id);
+        if (screen) {
+            screen.classList.add('active');
+            previousScreen = id;
+        }
+    }
+
+    // Join flow: Step 1
+    async function goToNickname() {
+        const code = document.getElementById('input-code').value.trim().toUpperCase();
+        if (code.length < 5) {
+            showError('code-error', t('player.code_error') || 'Enter a 5-character room code');
+            return;
+        }
+        roomCode = code;
+        try {
+            const res = await fetch(`/api/rooms/${encodeURIComponent(code)}`);
+            if (!res.ok) {
+                showError('code-error', t('player.room_not_found') || 'Room not found. Check the code and try again.');
+                return;
+            }
+            const info = await res.json();
+            const nameEl = document.getElementById('experience-name-display');
+            if (nameEl && info.experience_name) nameEl.textContent = info.experience_name;
+            document.getElementById('join-room-code').textContent = code;
+        } catch(e) {
+            showError('code-error', t('player.connection_error') || 'Could not reach the server. Try again.');
+            return;
+        }
+        showScreen('screen-join-name');
+        document.getElementById('input-nickname').focus();
+    }
+
+    // Join flow: Step 2
+    function joinRoom() {
+        const nickname = document.getElementById('input-nickname').value.trim();
+        if (nickname.length < 2) {
+            showError('name-error', t('player.name_error') || 'Name must be at least 2 characters');
+            return;
+        }
+        playerNickname = nickname;
+        connectSocket();
+    }
+
+    function showError(elementId, msg) {
+        const el = document.getElementById(elementId);
+        el.textContent = msg;
+        el.classList.remove('hidden');
+        setTimeout(() => el.classList.add('hidden'), 4000);
+    }
+
+    // Socket
+    function connectSocket() {
+        socket = io(SERVER_URL, {
+            reconnection: true,
+            reconnectionDelay: 1000,
+            reconnectionAttempts: 30,
+        });
+
+        socket.on('connect', () => {
+            socket.emit('player_join', { code: roomCode, nickname: playerNickname });
+        });
+
+        socket.on('join_success', (data) => {
+            playerId = data.player_id;
+            playerNickname = data.nickname;
+            myScore = data.score || 0;
+            document.getElementById('player-name-display').textContent = playerNickname;
+            document.getElementById('watching-name-display').textContent = playerNickname;
+
+            if (data.score) myScore = data.score;
+            if (data.reconnected && data.state === 'playing' && data.slide) {
+                currentSlide = data.slide;
+                if (data.already_answered && data.slide.slide_type === 'game') {
+                    hasAnswered = true;
+                    showSubmittedScreen();
+                } else if (data.slide.slide_type === 'game') {
+                    showGameScreen(data.slide);
+                } else {
+                    showWatchingScreen(data.slide);
+                }
+            } else {
+                showScreen('screen-waiting');
+            }
+        });
+
+        socket.on('join_error', (data) => {
+            const msg = data.message;
+            const codeErrors = ['room_locked', 'room_full', 'room_not_found'];
+            if (codeErrors.includes(msg)) {
+                showError('code-error', t(`player.${msg}`) || msg);
+                showScreen('screen-join-code');
+            } else {
+                showError('name-error', t(`player.${msg}`) || msg);
+                showScreen('screen-join-name');
+            }
+        });
+
+        socket.on('game_started', (data) => {
+            sfxGameStart();
+            questionNumber = 0;
+            currentSlide = data.slide;
+            if (data.slide && data.slide.slide_type === 'game') {
+                showGameScreen(data.slide);
+            } else {
+                showWatchingScreen(data.slide);
+            }
+        });
+
+        socket.on('slide_changed', (data) => {
+            hasAnswered = false;
+            selectedAnswer = null;
+            currentSlide = data.slide;
+            if (!data.slide) return;
+            if (data.slide.slide_type === 'game') {
+                showGameScreen(data.slide);
+            } else {
+                showWatchingScreen(data.slide);
+            }
+        });
+
+        socket.on('timer_start', (data) => { startTimer(data.duration, data.deadline); });
+        socket.on('answer_submitted', () => { showSubmittedScreen(); });
+        socket.on('reveal', (data) => { showReveal(data); });
+
+        socket.on('show_leaderboard', (data) => {
+            sfxLeaderboard();
+            showPlayerLeaderboard(data);
+        });
+
+        socket.on('paused', () => { stopTimer(); showScreen('screen-paused'); });
+
+        socket.on('resumed', () => {
+            if (isRevealed) {
+                showScreen('screen-game');  // Stay on reveal result screen
+            } else if (currentSlide && currentSlide.slide_type === 'game' && !hasAnswered) {
+                showScreen('screen-game');
+            } else if (hasAnswered) {
+                showSubmittedScreen();
+            } else if (currentSlide && currentSlide.slide_type === 'frame') {
+                showWatchingScreen(currentSlide);
+            }
+        });
+
+        socket.on('game_finished', (data) => {
+            stopTimer();
+            document.getElementById('gameover-rank').textContent = `#${data.your_rank}`;
+            document.getElementById('gameover-score').textContent = tReplace('player.points', {score: data.your_score}) || `${data.your_score} points`;
+            showScreen('screen-gameover');
+        });
+
+        socket.on('kicked', () => {
+            showScreen('screen-join-code');
+            if (socket) socket.disconnect();
+        });
+
+        socket.on('disconnect', () => {
+            if (previousScreen !== 'screen-join-code' && previousScreen !== 'screen-join-name') {
+                // Delay showing disconnect screen — fast reconnects won't flash it
+                setTimeout(() => {
+                    if (socket && !socket.connected) {
+                        showScreen('screen-disconnected');
+                    }
+                }, 2000);
+            }
+        });
+
+        socket.on('reconnect', () => {
+            socket.emit('player_join', { code: roomCode, nickname: playerNickname });
+        });
+    }
+
+    // Watching / frame slide screen
+    function showWatchingScreen(slide) {
+        const photo = document.getElementById('watching-photo');
+        const icon = document.getElementById('watching-icon');
+        const text = document.getElementById('watching-text');
+        if (slide && slide._display_mode === 'full' && slide.media_url) {
+            photo.src = slide.media_thumbnail || slide.media_url;
+            photo.style.display = '';
+            icon.style.display = 'none';
+            text.textContent = t('player.watching') || 'Enjoy the slideshow';
+        } else {
+            photo.style.display = 'none';
+            icon.style.display = '';
+            text.textContent = t('player.look_up') || 'Look at the screen!';
+        }
+        showScreen('screen-watching');
+    }
+
+    // Game screen
+    function showGameScreen(slide) {
+        hasAnswered = false;
+        selectedAnswer = null;
+        isRevealed = false;
+        if (slide.slide_type === 'game') questionNumber++;
+
+        showScreen('screen-game');
+
+        // Display mode controls what player sees
+        const mode = slide._display_mode || 'question_and_choices';
+        const photoImg = document.getElementById('quiz-photo-img');
+        if (mode === 'full' && (slide.media_url || slide.media_thumbnail)) {
+            photoImg.src = slide.media_url || slide.media_thumbnail || '';
+            photoImg.style.display = '';
+        } else if (mode === 'choices_only') {
+            photoImg.style.display = 'none';
+        } else {
+            // question_and_choices: no image
+            photoImg.style.display = 'none';
+        }
+        photoImg.dataset.originalUrl = slide.media_url || '';
+        photoImg.style.transition = '';
+        photoImg.style.opacity = '1';
+
+        // Question badge
+        document.getElementById('question-badge').textContent =
+            mode === 'choices_only' ? '' :
+            (tReplace('player.question_number', {n: questionNumber}) || `Question ${questionNumber}`);
+
+        // Timer / relaxed mode
+        const timerContainer = document.getElementById('timer-container');
+        const instruction = document.getElementById('game-instruction');
+        if (slide._relaxed) {
+            timerContainer.style.display = 'none';
+            instruction.textContent = t('player.answer_relaxed') || 'Take your time!';
+        } else {
+            timerContainer.style.display = '';
+            instruction.textContent = t('player.answer_now') || 'Tap your answer!';
+        }
+        instruction.style.background = '';
+        instruction.style.color = '';
+
+        // Build answer buttons
+        const area = document.getElementById('answers-area');
+        area.innerHTML = '';
+        const answers = [
+            { key: 'a', text: slide.answer_a },
+            { key: 'b', text: slide.answer_b },
+            { key: 'c', text: slide.answer_c },
+            { key: 'd', text: slide.answer_d },
+        ];
+        for (const ans of answers) {
+            if (!ans.text) continue;
+            const btn = document.createElement('button');
+            btn.className = `answer-card ans-${ans.key}`;
+            btn.setAttribute('aria-label', `${CARD_SHAPES[ans.key]} ${ans.text}`);
+            btn.innerHTML = `
+                <span class="card-shape">${CARD_SHAPES[ans.key]}</span>
+                <span class="card-label${ans.text.length > 20 ? ' long' : ''}">${escapeHtml(ans.text)}</span>
+            `;
+            btn.onclick = () => submitAnswer(ans.key, btn);
+            area.appendChild(btn);
+        }
+    }
+
+    function submitAnswer(answer, cardEl) {
+        if (hasAnswered) return;
+        hasAnswered = true;
+        selectedAnswer = answer;
+        document.querySelectorAll('.answer-card').forEach(c => c.classList.add('locked'));
+        if (cardEl) cardEl.classList.add('selected');
+        socket.emit('submit_answer', { code: roomCode, answer: answer });
+    }
+
+    function showSubmittedScreen() {
+        showScreen('screen-submitted');
+        const display = document.getElementById('submitted-answer-display');
+        if (selectedAnswer && currentSlide) {
+            const text = currentSlide[`answer_${selectedAnswer}`] || '';
+            display.className = `submitted-answer-badge ans-${selectedAnswer}`;
+            display.innerHTML = `<span>${CARD_SHAPES[selectedAnswer]}</span> ${escapeHtml(text)}`;
+        } else {
+            display.innerHTML = '';
+        }
+    }
+
+    // Timer
+    function startTimer(duration, deadline) {
+        stopTimer();
+        timerDuration = duration;
+        // Use server deadline for perfect sync across all devices
+        const endTime = deadline || (Date.now() + duration * 1000);
+        const fill = document.getElementById('timer-fill');
+        const text = document.getElementById('timer-text');
+
+        timerInterval = setInterval(() => {
+            const remaining = Math.max(0, (endTime - Date.now()) / 1000);
+            const pct = duration > 0 ? (remaining / duration) * 100 : 0;
+
+            fill.style.width = `${pct}%`;
+            fill.className = 'timer-bar-fill' + (pct < 25 ? ' danger' : pct < 50 ? ' warning' : '');
+            text.textContent = `${Math.ceil(remaining)}s`;
+
+            if (remaining <= 5 && remaining > 0) {
+                const secNow = Math.ceil(remaining);
+                const secPrev = Math.ceil(remaining + 0.1);
+                if (secNow < secPrev) sfxTimerLow();
+            }
+            if (remaining <= 0) { stopTimer(); text.textContent = "0s"; }
+        }, 100);
+    }
+
+    function stopTimer() {
+        if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
+    }
+
+    // Reveal
+    function showReveal(data) {
+        stopTimer();
+        isRevealed = true;
+        showScreen('screen-game');
+
+        // Swap silhouette to original photo
+        const photoImg = document.getElementById('quiz-photo-img');
+        if (photoImg && photoImg.dataset.originalUrl) {
+            photoImg.style.transition = 'opacity 0.3s';
+            photoImg.style.opacity = '0';
+            setTimeout(() => {
+                photoImg.src = photoImg.dataset.originalUrl;
+                photoImg.style.opacity = '1';
+            }, 300);
+        }
+
+        // Update instruction bar
+        const instruction = document.getElementById('game-instruction');
+        const correctKey = data.correct_answer;
+        const correctLabel = currentSlide ? (currentSlide[`answer_${correctKey}`] || correctKey?.toUpperCase()) : '';
+
+        if (data.your_correct) {
+            sfxCorrect();
+            instruction.style.background = 'var(--color-success-bg)';
+            instruction.style.color = 'var(--color-success)';
+            instruction.textContent = `\u2713 ${t('player.correct') || 'Correct!'} +${data.your_points}`;
+        } else if (data.your_answer) {
+            sfxWrong();
+            instruction.style.background = 'var(--color-error-bg)';
+            instruction.style.color = 'var(--color-error)';
+            instruction.textContent = `\u2717 ${correctKey?.toUpperCase()}. ${correctLabel}`;
+        } else {
+            instruction.style.background = 'var(--color-error-bg)';
+            instruction.style.color = 'var(--color-error)';
+            instruction.textContent = `\u23F0 ${correctKey?.toUpperCase()}. ${correctLabel}`;
+        }
+
+        // Highlight correct card
+        document.querySelectorAll('.answer-card').forEach(c => c.classList.add('locked'));
+        if (correctKey) {
+            const correctCard = document.querySelector(`.answer-card.ans-${correctKey}`);
+            if (correctCard) {
+                correctCard.style.outline = '4px solid var(--color-success)';
+                correctCard.style.opacity = '1';
+            }
+        }
+
+        myScore = data.your_total_score || myScore;
+
+        // Update fallback reveal screen data
+        const icon = document.getElementById('result-icon');
+        const resultInstr = document.getElementById('result-instruction');
+        const points = document.getElementById('result-points');
+        const total = document.getElementById('result-total');
+        if (data.your_correct) {
+            icon.textContent = '\u2713';
+            resultInstr.className = 'instruction correct';
+            resultInstr.textContent = t('player.correct') || 'Correct!';
+            points.className = 'score-big positive';
+            points.textContent = `+${data.your_points}`;
+        } else {
+            icon.textContent = data.your_answer ? '\u2717' : '\u23F0';
+            resultInstr.className = 'instruction wrong';
+            resultInstr.textContent = `${correctKey?.toUpperCase()}. ${correctLabel}`;
+            points.className = 'score-big zero';
+            points.textContent = '0';
+        }
+        total.textContent = tReplace('player.total_points', {score: myScore}) || `Total: ${myScore} points`;
+    }
+
+    function showPlayerLeaderboard(data) {
+        showScreen('screen-leaderboard');
+        document.getElementById('lb-rank').textContent = `#${data.your_rank}`;
+        document.getElementById('lb-score').textContent = tReplace('player.points', {score: myScore}) || `${myScore} points`;
+    }
+
+    function retryConnection() {
+        if (socket) {
+            socket.disconnect();
+            socket.connect();
+        } else {
+            connectSocket();
+        }
+    }
+
+    function escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+
+    // Sound effects
+    const sfxAudio = {};
+    ['gameStart', 'correct', 'wrong', 'timerLow', 'leaderboard'].forEach(name => {
+        const a = new Audio(`/static/sounds/${name}.wav`);
+        a.preload = 'auto';
+        sfxAudio[name] = a;
+    });
+    function playSfx(name) {
+        try { const a = sfxAudio[name]; if (a) { a.currentTime = 0; a.play().catch(() => {}); } } catch(e) {}
+    }
+    function sfxCorrect() { playSfx('correct'); }
+    function sfxWrong() { playSfx('wrong'); }
+    function sfxGameStart() { playSfx('gameStart'); }
+    function sfxTimerLow() { playSfx('timerLow'); }
+    function sfxLeaderboard() { playSfx('leaderboard'); }
+
+    // Init
+    document.addEventListener('DOMContentLoaded', async () => {
+        await initLocale();
+
+        const codeInput = document.getElementById('input-code');
+        if (isPreview && roomCode) {
+            // Preview mode: auto-join as observer, scale down, disable interaction
+            document.body.style.transform = 'scale(0.6)';
+            document.body.style.transformOrigin = 'top left';
+            document.body.style.width = '167%';
+            document.body.style.pointerEvents = 'none';
+            playerNickname = 'Preview';
+            connectSocket();
+            return;
+        }
+        if (roomCode) {
+            try {
+                const res = await fetch(`/api/rooms/${encodeURIComponent(roomCode)}`);
+                if (res.ok) {
+                    const info = await res.json();
+                    const nameEl = document.getElementById('experience-name-display');
+                    if (nameEl && info.experience_name) nameEl.textContent = info.experience_name;
+                }
+            } catch(e) {}
+            document.getElementById('input-nickname').focus();
+        } else {
+            codeInput.focus();
+        }
+
+        codeInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') goToNickname(); });
+        document.getElementById('input-nickname').addEventListener('keydown', (e) => { if (e.key === 'Enter') joinRoom(); });
+
+        // ═══ Connection Keep-Alive (iOS + Android) ═══
+        // 1. Wake Lock API (Chrome Android 84+, Safari iOS 16.4+)
+        let wakeLock = null;
+        async function requestWakeLock() {
+            try {
+                if ('wakeLock' in navigator) {
+                    wakeLock = await navigator.wakeLock.request('screen');
+                    wakeLock.addEventListener('release', () => { wakeLock = null; });
+                }
+            } catch(e) {}
+        }
+
+        // 2. Visibility change — force reconnect when phone returns from background
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'visible') {
+                requestWakeLock();
+                if (socket && !socket.connected && roomCode && playerNickname) {
+                    socket.connect();
+                }
+            }
+        });
+
+        // 3. No-sleep: silent audio loop keeps iOS from suspending the page
+        let noSleepAudio = null;
+        function startNoSleep() {
+            if (noSleepAudio) return;
+            noSleepAudio = new Audio('data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=');
+            noSleepAudio.loop = true;
+            noSleepAudio.volume = 0.001;
+            noSleepAudio.play().catch(() => {});
+        }
+
+        // Activate keep-alive on first user interaction (required by browsers)
+        document.addEventListener('click', () => {
+            requestWakeLock();
+            startNoSleep();
+        }, { once: true });
+        document.addEventListener('touchstart', () => {
+            requestWakeLock();
+            startNoSleep();
+        }, { once: true });
+    });
+</script>
+{% endblock %}

@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>{% block title %}PhotoFrame{% endblock %}</title>
+    <link rel="stylesheet" href="/static/css/theme.css">
+    {% block head %}{% endblock %}
+    <style>
+        /* Prevent pull-to-refresh on mobile */
+        html, body { overscroll-behavior: none; }
+    </style>
+</head>
+<body>
+    {% block body %}{% endblock %}
+    <script src="/static/js/socket.io.min.js"></script>
+    <script>
+        const SERVER_IP = "{{ server_ip }}";
+        const SERVER_PORT = {{ server_port }};
+        // Always use HTTP — server never runs HTTPS (self-signed breaks phones)
+        const SERVER_URL = window.location.origin.replace(/^https:/, 'http:');
+        let LOCALE = {};
+        let CURRENT_LANG = 'en';
+
+        async function loadLocale(lang) {
+            CURRENT_LANG = lang || 'en';
+            const res = await fetch(`/api/locale/${CURRENT_LANG}`);
+            LOCALE = await res.json();
+            document.documentElement.lang = CURRENT_LANG;
+        }
+
+        function t(path) {
+            const keys = path.split('.');
+            let val = LOCALE;
+            for (const k of keys) {
+                if (val && typeof val === 'object') val = val[k];
+                else return null;
+            }
+            return val || null;
+        }
+
+        function tReplace(path, replacements) {
+            let text = t(path);
+            if (!text) return path;
+            for (const [key, val] of Object.entries(replacements)) {
+                text = text.replace(`{${key}}`, val);
+            }
+            return text;
+        }
+
+        // Translate all elements with data-t attribute
+        function translatePage() {
+            document.querySelectorAll('[data-t]').forEach(el => {
+                const key = el.getAttribute('data-t');
+                const val = t(key);
+                if (val) el.textContent = val;
+            });
+            document.querySelectorAll('[data-t-placeholder]').forEach(el => {
+                const key = el.getAttribute('data-t-placeholder');
+                const val = t(key);
+                if (val) el.placeholder = val;
+            });
+            document.querySelectorAll('[data-t-title]').forEach(el => {
+                const key = el.getAttribute('data-t-title');
+                const val = t(key);
+                if (val) el.title = val;
+            });
+        }
+
+        // Load saved language from settings, then load locale + translate
+        async function initLocale() {
+            try {
+                const res = await fetch('/api/settings');
+                const settings = await res.json();
+                await loadLocale(settings.language || 'en');
+            } catch(e) {
+                await loadLocale('en');
+            }
+            translatePage();
+        }
+
+        // Save language to server and reload locale
+        async function setLanguage(lang) {
+            await fetch('/api/settings/language', {
+                method: 'PUT',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({language: lang})
+            });
+            await loadLocale(lang);
+            translatePage();
+        }
+    </script>
+    {% block scripts %}{% endblock %}
+</body>
+</html>

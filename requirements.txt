@@ -1,0 +1,21 @@
+# Core
+fastapi>=0.115
+uvicorn[standard]>=0.34
+python-socketio>=5.12
+python-multipart>=0.0.20
+
+# Database
+sqlalchemy[asyncio]>=2.0.36
+aiosqlite>=0.20
+
+# Image processing
+Pillow>=11.0
+pillow-heif>=0.20
+rembg>=2.0.68
+onnxruntime>=1.20
+
+# Utilities
+qrcode[pil]>=8.0
+python-dotenv>=1.0
+aiofiles>=24.1
+jinja2>=3.1

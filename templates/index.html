@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+{% block title %}PhotoFrame — Home{% endblock %}
+{% block head %}
+<style>
+    .home {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        min-height: 100vh;
+        padding: var(--sp-xl);
+        text-align: center;
+    }
+    .home h1 {
+        font-size: 48px;
+        margin-bottom: var(--sp-sm);
+        background: linear-gradient(135deg, var(--accent-light-blue), var(--accent-blue));
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+    }
+    .home p {
+        color: var(--text-muted);
+        font-size: var(--fs-lg);
+        margin-bottom: var(--sp-section);
+        max-width: 500px;
+    }
+    .home-links {
+        display: flex;
+        flex-direction: column;
+        gap: var(--sp-lg);
+        width: 100%;
+        max-width: 320px;
+    }
+    .home-link {
+        display: flex;
+        align-items: center;
+        gap: var(--sp-lg);
+        padding: var(--sp-lg) var(--sp-xl);
+        background: var(--bg-surface);
+        border: 1px solid var(--border-color);
+        border-radius: var(--radius-lg);
+        color: var(--text-primary);
+        text-decoration: none;
+        transition: border-color var(--transition-normal), background var(--transition-normal);
+    }
+    .home-link:hover {
+        border-color: var(--accent-light-blue);
+        background: var(--bg-hover);
+        text-decoration: none;
+    }
+    .home-link .icon { font-size: 28px; }
+    .home-link .label { font-size: var(--fs-lg); font-weight: var(--fw-medium); }
+    .home-link .desc { font-size: var(--fs-sm); color: var(--text-muted); }
+    .network-info {
+        margin-top: var(--sp-section);
+        font-size: var(--fs-sm);
+        color: var(--text-muted);
+        padding: var(--sp-sm) var(--sp-lg);
+        background: rgba(255,255,255,0.03);
+        border-radius: var(--radius-md);
+    }
+</style>
+{% endblock %}
+{% block body %}
+<div class="home">
+    <h1>PhotoFrame</h1>
+    <p>Digital photo frame & interactive shadow game</p>
+    <div class="home-links">
+        <a href="/admin" class="home-link">
+            <span class="icon">&#9881;</span>
+            <div>
+                <div class="label">Admin Panel</div>
+                <div class="desc">Create & control experiences</div>
+            </div>
+        </a>
+        <a href="/display" class="home-link">
+            <span class="icon">&#9654;</span>
+            <div>
+                <div class="label">Display Screen</div>
+                <div class="desc">Fullscreen for TV / projector</div>
+            </div>
+        </a>
+        <a href="/play" class="home-link">
+            <span class="icon">&#127918;</span>
+            <div>
+                <div class="label">Join as Player</div>
+                <div class="desc">Play on your phone</div>
+            </div>
+        </a>
+    </div>
+    <div class="network-info">
+        Network: http://{{ server_ip }}:{{ server_port }}
+    </div>
+    <div class="network-info" style="margin-top:var(--sp-sm); color:var(--color-warning, #f59e0b);">
+        &#9888; This app is accessible to anyone on your WiFi network. Only run it on trusted networks.
+    </div>
+</div>
+{% endblock %}
