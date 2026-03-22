@@ -82,9 +82,9 @@ class Experience(Base):
 
     # Scoring settings
     speed_scoring = Column(Boolean, default=True)  # True=speed-based, False=flat points
-    max_points = Column(Integer, default=100)  # points for fastest correct / flat correct
-    min_points = Column(Integer, default=10)  # points for slowest correct (speed mode only)
-    wrong_points = Column(Integer, default=0)  # 0=no penalty, negative=deduct points
+    max_points = Column(Integer, default=10)  # points for fastest correct / flat correct
+    min_points = Column(Integer, default=0)  # points for slowest correct (speed mode only)
+    wrong_points = Column(Integer, default=-10)  # 0=no penalty, negative=deduct points
 
     # Player phone display: "choices_only", "question_and_choices", "full" (image+question+choices)
     player_display_mode = Column(String, default="question_and_choices")
@@ -201,12 +201,20 @@ async def init_db(engine):
             pass  # column already exists
         for col, typ, default in [
             ("speed_scoring", "BOOLEAN", "1"),
-            ("max_points", "INTEGER", "100"),
-            ("min_points", "INTEGER", "10"),
-            ("wrong_points", "INTEGER", "0"),
+            ("max_points", "INTEGER", "10"),
+            ("min_points", "INTEGER", "0"),
+            ("wrong_points", "INTEGER", "-10"),
             ("quiz_intro_duration", "INTEGER", "3"),
         ]:
             try:
                 await conn.execute(text(f"ALTER TABLE experiences ADD COLUMN {col} {typ} DEFAULT {default}"))
             except Exception:
                 pass  # column already exists
+        # Migrate old scoring defaults (100/10/0) to new defaults (10/0/-10)
+        try:
+            await conn.execute(text(
+                "UPDATE experiences SET max_points=10, min_points=0, wrong_points=-10 "
+                "WHERE max_points=100 AND min_points=10 AND wrong_points=0"
+            ))
+        except Exception:
+            pass
