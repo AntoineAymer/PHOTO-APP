@@ -9,6 +9,38 @@
     /* Hide cursor only when fullscreen (click display to go fullscreen) */
     :fullscreen body, body:fullscreen { cursor: none; }
 
+    /* Year badge — top-left pill on frame slides */
+    .photo-year-badge {
+        display: none;
+        position: absolute;
+        top: 20px;
+        left: 20px;
+        z-index: 10;
+        background: rgba(0, 0, 0, 0.5);
+        backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
+        border: 1px solid rgba(255, 255, 255, 0.15);
+        border-radius: 24px;
+        padding: 6px 18px 6px 14px;
+        color: rgba(255, 255, 255, 0.9);
+        font-size: clamp(16px, 2vw, 24px);
+        font-weight: 700;
+        font-family: var(--font-heading, 'Ubuntu', sans-serif);
+        letter-spacing: 1.5px;
+        pointer-events: none;
+        text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
+        animation: yearBadgeFadeIn 0.6s ease-out;
+    }
+    .photo-year-badge::before {
+        content: '📅';
+        margin-right: 6px;
+        font-size: 0.85em;
+    }
+    @keyframes yearBadgeFadeIn {
+        from { opacity: 0; transform: translateY(-8px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+
     .display-app {
         width: 100vw;
         height: 100vh;
@@ -683,11 +715,40 @@
         color: rgba(255,255,255,0.9);
         font-weight: 700;
     }
-    .persistent-bar .pb-top {
-        color: #fbbf24;
-        font-weight: 600;
+    .pb-podium {
+        display: flex; align-items: center; gap: 12px;
+        flex-shrink: 0;
     }
-    .persistent-bar .pb-top .star { margin-right: 3px; }
+    .pb-medal {
+        display: flex; align-items: center; gap: 5px;
+        font-size: 13px; font-weight: 700;
+        white-space: nowrap;
+    }
+    .pb-medal-icon {
+        width: 22px; height: 22px;
+        border-radius: 50%;
+        display: flex; align-items: center; justify-content: center;
+        font-size: 12px; font-weight: 900;
+        flex-shrink: 0;
+        text-shadow: 0 1px 2px rgba(0,0,0,0.3);
+    }
+    .pb-medal-gold .pb-medal-icon {
+        background: linear-gradient(135deg, #fbbf24, #f59e0b);
+        color: #78350f;
+        box-shadow: 0 0 6px rgba(251,191,36,0.5);
+    }
+    .pb-medal-silver .pb-medal-icon {
+        background: linear-gradient(135deg, #d1d5db, #9ca3af);
+        color: #374151;
+        box-shadow: 0 0 6px rgba(156,163,175,0.4);
+    }
+    .pb-medal-bronze .pb-medal-icon {
+        background: linear-gradient(135deg, #d97706, #b45309);
+        color: #fff;
+        box-shadow: 0 0 6px rgba(217,119,6,0.4);
+    }
+    .pb-medal-name { color: rgba(255,255,255,0.9); }
+    .pb-medal-score { color: rgba(255,255,255,0.5); font-weight: 600; font-size: 12px; }
 </style>
 {% endblock %}
 
@@ -734,7 +795,7 @@
     <!-- FRAME SLIDE -->
     <div id="d-frame" class="dscreen">
         <div class="media-container" id="frame-container"></div>
-        <div id="photo-year-badge" style="display:none; position:absolute; top:24px; left:24px; background:rgba(0,0,0,0.45); backdrop-filter:blur(8px); border-radius:10px; padding:6px 16px; color:#fff; font-size:clamp(18px,2.5vw,28px); font-weight:700; font-family:var(--font-heading,'Ubuntu',sans-serif); z-index:10; pointer-events:none; letter-spacing:1px; text-shadow:0 1px 4px rgba(0,0,0,0.5);"></div>
+        <div id="photo-year-badge" class="photo-year-badge"></div>
         <div id="score-overlay" style="display:none; position:absolute; bottom:16px; right:16px; background:rgba(0,0,0,0.5); backdrop-filter:blur(6px); border-radius:12px; padding:8px 16px; color:#fff; font-size:14px; z-index:10; pointer-events:none;">
             <span id="score-q-text" style="opacity:0.7;"></span>
             <span style="margin:0 6px; opacity:0.3;">|</span>
@@ -836,9 +897,9 @@
             <span class="pb-code" id="pb-code"></span>
         </div>
         <div class="pb-spacer"></div>
+        <div class="pb-podium" id="pb-podium"></div>
         <div class="pb-stats">
             <span class="pb-players" id="pb-players"></span>
-            <span class="pb-top" id="pb-top"></span>
         </div>
     </div>
 </div>
@@ -855,6 +916,7 @@
     let joinUrl = '';
     let questionIndex = 0;
     let lastRevealStats = null;  // {correct, total, topPlayer, topScore}
+    let topPlayers = [];  // [{nickname, score}, ...] up to 3
     let playerCount = 0;
     let showPersistent = true;  // can be toggled by admin
 
@@ -873,12 +935,20 @@
         // Players
         const pEl = document.getElementById('pb-players');
         pEl.innerHTML = playerCount > 0 ? `<strong>${playerCount}</strong> player${playerCount !== 1 ? 's' : ''}` : '';
-        // Top scorer
-        const tEl = document.getElementById('pb-top');
-        if (lastRevealStats?.topPlayer) {
-            tEl.innerHTML = `<span class="star">&#9733;</span>${lastRevealStats.topPlayer} ${lastRevealStats.topScore}pts`;
+        // Top 3 podium
+        const podium = document.getElementById('pb-podium');
+        const medals = ['gold', 'silver', 'bronze'];
+        const ranks = ['1', '2', '3'];
+        if (topPlayers.length > 0) {
+            podium.innerHTML = topPlayers.slice(0, 3).map((p, i) => `
+                <div class="pb-medal pb-medal-${medals[i]}">
+                    <span class="pb-medal-icon">${ranks[i]}</span>
+                    <span class="pb-medal-name">${p.nickname}</span>
+                    <span class="pb-medal-score">${p.score}</span>
+                </div>
+            `).join('');
         } else {
-            tEl.textContent = '';
+            podium.innerHTML = '';
         }
     }
 
@@ -1215,7 +1285,7 @@
         if (slide.exif_date) {
             const year = new Date(slide.exif_date).getFullYear();
             yearBadge.textContent = year;
-            yearBadge.style.display = '';
+            yearBadge.style.display = 'block';
         } else {
             yearBadge.style.display = 'none';
         }
@@ -1374,10 +1444,15 @@
             secondsEl.className = 'game-timer-seconds' + (state ? ` ${state}` : '');
             secondsEl.textContent = sec > 0 ? sec : '0';
 
-            // Points countdown
-            const elapsed = duration - remaining;
-            const pts = Math.max(10, Math.round(100 - 90 * (elapsed / duration)));
-            pointsEl.textContent = tReplace('display.points_badge', {pts}) || `${pts} Points`;
+            // Live points countdown using experience settings
+            const maxPts = (experience && experience.max_points) || 100;
+            const minPts = (experience && experience.min_points) || 10;
+            const useSpeed = experience ? experience.speed_scoring !== false : true;
+            if (useSpeed && duration > 0) {
+                const speedRatio = Math.min(1, (duration - remaining) / duration);
+                const pts = Math.max(minPts, Math.round(maxPts - (maxPts - minPts) * speedRatio));
+                pointsEl.textContent = tReplace('display.points_badge', {pts}) || `${pts} Points`;
+            }
 
             if (sec <= 5 && sec > 0 && sec !== lastTimerSecond) {
                 sfxTimerLow();
@@ -1385,7 +1460,7 @@
             lastTimerSecond = sec;
             if (remaining <= 0) {
                 stopTimer();
-                pointsEl.textContent = tReplace('display.points_badge', {pts: 0}) || '0 Points';
+                pointsEl.textContent = tReplace('display.points_badge', {pts: minPts}) || `${minPts} Points`;
             }
         }, 100);
     }
@@ -1456,6 +1531,7 @@
             if (!lastRevealStats) lastRevealStats = {correct: 0, total: 0, topPlayer: null, topScore: 0};
             lastRevealStats.topPlayer = players[0].nickname;
             lastRevealStats.topScore = players[0].score;
+            topPlayers = players.slice(0, 3).map(p => ({nickname: p.nickname, score: p.score}));
             updatePersistentBar();
         }
         showDScreen('d-leaderboard');
