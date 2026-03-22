@@ -263,7 +263,8 @@
     "intermission_subtitle": "Tap your name to get back in the game",
     "reclaim_success": "Welcome back, {name}!",
     "reclaim_already_claimed": "This name has already been claimed.",
-    "reclaim_waiting": "Waiting for the host to resume..."
+    "reclaim_waiting": "Waiting for the host to resume...",
+    "thanks": "Thanks for playing!"
   },
   "display": {
     "scan_to_join": "Scan to join",

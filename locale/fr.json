@@ -263,7 +263,8 @@
     "intermission_subtitle": "Appuie sur ton nom pour revenir dans le jeu",
     "reclaim_success": "Bon retour, {name}\u00a0!",
     "reclaim_already_claimed": "Ce nom a d\u00e9j\u00e0 \u00e9t\u00e9 r\u00e9cup\u00e9r\u00e9.",
-    "reclaim_waiting": "En attente de la reprise par l'animateur..."
+    "reclaim_waiting": "En attente de la reprise par l'animateur...",
+    "thanks": "Merci d'avoir jou\u00e9\u00a0!"
   },
   "display": {
     "scan_to_join": "Scannez pour rejoindre",
