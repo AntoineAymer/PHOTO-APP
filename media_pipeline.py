@@ -76,57 +76,63 @@ _DEFAULT_PROMPTS = {
         "- Output contains only the edited image"
     ),
     "missing": (
-        "# PHOTO PERSON REMOVAL EDITOR\n\n"
+        "# PHOTO SUBJECT REMOVAL EDITOR\n\n"
         "## OBJECTIVE\n"
-        "Edit this photo by completely removing one specific person and seamlessly filling "
-        "the vacated area with natural background continuation, creating the appearance "
-        "that the person was never present in the scene.\n\n"
-        "**Person to remove:** '{person}'\n\n"
+        "Edit this photo by completely removing one specific subject (a person, an animal, "
+        "or an object) and seamlessly filling the vacated area with natural background "
+        "continuation, creating the appearance that the subject was never present in the scene.\n\n"
+        "**Subject to remove:** '{person}'\n\n"
         "## PROCESSING STEPS\n\n"
-        "**Phase 1: Person Identification**\n"
-        "1. Analyze the photo to detect all people present\n"
-        "2. Parse the person description to extract identifying characteristics\n"
-        "3. Match the description against detected people using position, clothing, features\n"
-        "4. Identify the single person that best matches\n\n"
-        "**Phase 2: Person Removal**\n"
-        "1. Determine the complete area occupied by the target person (body, clothing, accessories)\n"
-        "2. Include any shadows or reflections directly caused by that person\n"
-        "3. Mark the entire removal region precisely\n\n"
+        "**Phase 1: Subject Identification**\n"
+        "1. Analyze the photo to detect the target subject\n"
+        "2. Parse the description to extract identifying characteristics\n"
+        "3. Identify the single subject that best matches\n\n"
+        "**Phase 2: Subject Removal**\n"
+        "1. Determine the COMPLETE area occupied by the target subject:\n"
+        "   - If a PERSON: entire body, ALL clothing, hair, shoes, accessories, held objects\n"
+        "   - If an ANIMAL: the ENTIRE animal — head, body, ALL legs, tail, ears, paws/hooves, "
+        "fur/feathers. Do NOT leave any body part behind. Remove the complete animal.\n"
+        "   - If an OBJECT: the ENTIRE object — all parts, attachments, shadows\n"
+        "2. Include any shadows or reflections directly caused by that subject\n"
+        "3. Mark the entire removal region precisely — leave NOTHING of the subject behind\n\n"
         "**Phase 3: Background Inpainting**\n"
         "1. Analyze surrounding background context (textures, patterns, colors, lighting)\n"
         "2. Generate seamless background fill using content-aware inpainting\n"
         "3. Blend inpainted area with surrounding context to eliminate visible seams\n"
         "4. Ensure lighting, color temperature, and perspective match adjacent areas\n\n"
         "**Phase 4: Preservation Verification**\n"
-        "1. Verify all other people remain at original visibility and appearance\n"
+        "1. Verify all other people/animals/objects remain at original visibility and appearance\n"
         "2. Verify all other scene elements unchanged\n"
         "3. Verify no unintended modifications outside removal region\n\n"
         "## REQUIREMENTS\n\n"
         "**You must:**\n"
-        "- Remove ONLY the person matching the description\n"
-        "- Remove the person completely (entire visible body)\n"
+        "- Remove ONLY the subject matching the description\n"
+        "- Remove the subject COMPLETELY — every single part of it, leaving nothing behind\n"
+        "- For animals: remove ALL body parts (head, body, ALL legs, tail, ears) — the entire animal must vanish\n"
+        "- For objects: remove the entire object including all attachments\n"
         "- Fill vacated area with natural background continuation\n"
         "- Inpaint seamlessly so removal is undetectable\n"
         "- Match surrounding textures, patterns, colors, and lighting\n"
-        "- Keep all other people completely unchanged and fully visible\n"
+        "- Keep all other people/animals/objects completely unchanged and fully visible\n"
         "- Keep the entire rest of the scene unchanged\n"
         "- Output only the edited image\n\n"
         "**You must not:**\n"
-        "- Remove more than one person\n"
-        "- Remove the wrong person\n"
+        "- Remove more than one subject\n"
+        "- Remove the wrong subject\n"
+        "- Leave ANY part of the subject visible (no leftover legs, paws, wheels, handles, etc.)\n"
         "- Leave blank, blurred, or obviously artificial areas\n"
-        "- Modify, darken, or alter other people\n"
-        "- Change scene elements outside the person's occupied area\n\n"
+        "- Modify, darken, or alter other subjects\n"
+        "- Change scene elements outside the subject's occupied area\n\n"
         "## VERIFICATION CHECKLIST\n"
         "Before output, verify:\n"
-        "- Correct person identified from description\n"
-        "- ONLY that one person removed\n"
-        "- Person completely removed from image\n"
+        "- Correct subject identified from description\n"
+        "- ONLY that one subject removed\n"
+        "- Subject completely removed — absolutely NO remnants visible\n"
         "- Vacated area filled with seamless background continuation\n"
         "- No visible seams, artifacts, or discontinuities\n"
-        "- All other people unchanged and fully visible\n"
+        "- All other people/animals/objects unchanged and fully visible\n"
         "- Rest of scene unchanged\n"
-        "- Photo appears natural as if person was never present\n"
+        "- Photo appears natural as if subject was never present\n"
         "- Output contains only the edited image"
     ),
     "analyze_people": (
@@ -993,9 +999,16 @@ def analyze_people_gemini(file_path: str, lang: str = "en") -> dict | None:
             "Order people from LEFT to RIGHT. "
             "Then suggest a quiz question: pick one person as the correct answer and provide "
             "2 plausible wrong answers (other people in the photo, or invented if only 1 person). "
+            "Additionally, if the photo contains prominent non-human subjects (animals like dogs, cats, horses, etc. "
+            "or large distinctive objects like a car, cake, bicycle, statue, etc.), list up to 2 of the MOST "
+            "visually prominent ones in a 'subjects' array. Only include subjects that are clearly visible, "
+            "large enough to be interesting for a removal quiz, and would be obviously noticed if missing. "
+            "If there are no such prominent animals or objects, return an empty 'subjects' array. "
+            "For each subject, give a short description and center position. "
             "Reply ONLY with valid JSON, no markdown, in this exact format:\n"
             '{"people": [{"desc": "description1", "center_x": 30, "center_y": 50}, '
             '{"desc": "description2", "center_x": 70, "center_y": 50}], '
+            '"subjects": [{"desc": "golden retriever dog", "center_x": 60, "center_y": 80, "type": "animal"}], '
             '"quiz": {"question": "Who is behind the silhouette?", '
             '"correct": "short name/description", '
             '"wrong": ["wrong1", "wrong2"]}}'
@@ -1034,6 +1047,18 @@ def analyze_people_gemini(file_path: str, lang: str = "en") -> dict | None:
                                 positions.append({"center_x": 50, "center_y": 50})
                         data["people"] = normalized_people
                         data["positions"] = positions
+                        # Parse non-human subjects (animals/objects) if present
+                        raw_subjects = data.get("subjects", [])
+                        normalized_subjects = []
+                        for s in raw_subjects:
+                            if isinstance(s, dict) and s.get("desc"):
+                                normalized_subjects.append({
+                                    "desc": s["desc"],
+                                    "center_x": s.get("center_x", 50),
+                                    "center_y": s.get("center_y", 50),
+                                    "type": s.get("type", "object"),
+                                })
+                        data["subjects"] = normalized_subjects
                         return data
                     else:
                         print(f"Gemini people analysis: unexpected JSON structure: {text[:300]}")

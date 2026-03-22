@@ -413,7 +413,7 @@
     .exp-layout.has-detail .exp-detail { display: flex; }
     .exp-detail-header {
         padding: 12px 16px; border-bottom: 1px solid var(--border-color);
-        display: flex; align-items: center; justify-content: space-between;
+        display: flex; align-items: center; gap: 4px;
     }
     .exp-detail-header .title { font-size: 14px; font-weight: 600; }
     .exp-detail-body { flex: 1; overflow-y: auto; padding: 16px; }
@@ -1035,9 +1035,13 @@
 
     <!-- ═══ Show Editor Section ═══ -->
     <div id="section-editor" class="dashboard" style="display:none; max-width:100%; padding-left:20px; padding-right:20px;">
-        <button class="big-btn big-btn-secondary" onclick="closeExperienceEditor()" style="max-width:200px; margin-bottom:24px;">
-            <span class="btn-icon">&#8592;</span> <span data-t="back">Back</span>
-        </button>
+        <div style="display:flex; align-items:center; margin-bottom:24px; gap:12px;">
+            <button class="big-btn big-btn-secondary" onclick="closeExperienceEditor()" style="max-width:200px;">
+                <span class="btn-icon">&#8592;</span> <span data-t="back">Back</span>
+            </button>
+            <div style="flex:1;"></div>
+            <div id="exp-quiz-count-badge" style="display:none; padding:6px 14px; border-radius:8px; background:rgba(0,112,173,0.15); border:1px solid rgba(0,112,173,0.3); font-size:13px; font-weight:600; color:var(--accent-light-blue); letter-spacing:0.3px;"></div>
+        </div>
         <div id="experience-editor"></div>
     </div>
 
@@ -2230,7 +2234,19 @@
         const editor = document.getElementById('experience-editor');
         const slideCount = exp.slides.length;
         const hasSlides = slideCount > 0;
+        const quizTotal = exp.slides.filter(s => s.slide_type === 'game').length;
         showSelectedForRemoval.clear();
+
+        // Update quiz count badge in header
+        const qBadge = document.getElementById('exp-quiz-count-badge');
+        if (qBadge) {
+            if (quizTotal > 0) {
+                qBadge.textContent = `${quizTotal} quiz`;
+                qBadge.style.display = '';
+            } else {
+                qBadge.style.display = 'none';
+            }
+        }
 
         editor.innerHTML = `
             <div class="exp-layout">
@@ -2370,6 +2386,8 @@
                 <div class="exp-detail" id="slide-detail-column">
                     <div class="exp-detail-header">
                         <span class="title">Slide Detail</span>
+                        <span id="sdp-quiz-number" style="display:none; font-size:11px; font-weight:700; color:var(--accent-light-blue); background:rgba(0,112,173,0.15); padding:2px 8px; border-radius:4px; margin-left:8px;"></span>
+                        <div style="flex:1;"></div>
                         <button onclick="closeSlideDetail()" style="background:none; border:none; color:var(--text-muted); cursor:pointer; font-size:18px; padding:4px;">&#10005;</button>
                     </div>
                     <div class="exp-detail-body">
@@ -2902,6 +2920,17 @@
 
         activeSlideId = slideId;
 
+        // Quiz number badge
+        const quizNumEl = document.getElementById('sdp-quiz-number');
+        if (slide.slide_type === 'game') {
+            const gameSlides = currentExperience.slides.filter(s => s.slide_type === 'game');
+            const qIdx = gameSlides.findIndex(s => s.id === slideId) + 1;
+            quizNumEl.textContent = `Quiz #${qIdx}`;
+            quizNumEl.style.display = '';
+        } else {
+            quizNumEl.style.display = 'none';
+        }
+
         // Localize static quiz panel labels
         const _s = (id, key, fallback) => { const el = document.getElementById(id); if (el) el.textContent = t(key) || fallback; };
         _s('sdp-quiz-settings-label', 'admin.quiz_settings', 'Quiz Settings');
@@ -3245,7 +3274,7 @@
             const personPicker = document.getElementById('sdp-person-picker');
             const personSelect = document.getElementById('sdp-person-select');
             if (type === 'missing') {
-                quizLabel.textContent = t('admin.quiz_missing_question') || 'Which person gets removed from the photo?';
+                quizLabel.textContent = t('admin.quiz_missing_question') || 'Which subject gets removed from the photo?';
                 personPicker.style.display = '';
             } else if (type === 'shadow') {
                 quizLabel.textContent = t('admin.quiz_shadow_question') || 'Which person gets turned into a black shadow?';
@@ -3274,12 +3303,14 @@
 
             // Populate person picker dropdown with Gemini descriptions
             const people = data.people || [];
+            const subjects = data.subjects || [];
+            const totalOptions = people.length + (type === 'missing' ? subjects.length : 0);
             personSelect.innerHTML = '';
-            if (people.length > 1) {
+            if (totalOptions > 1) {
                 // Force admin to pick — don't auto-select
                 const placeholder = document.createElement('option');
                 placeholder.value = '';
-                placeholder.textContent = t('admin.quiz_pick_person') || 'Pick one person from this list';
+                placeholder.textContent = t('admin.quiz_pick_subject') || 'Pick one subject from this list';
                 placeholder.disabled = true;
                 placeholder.selected = true;
                 personSelect.appendChild(placeholder);
@@ -3287,10 +3318,28 @@
             people.forEach((p, i) => {
                 const opt = document.createElement('option');
                 opt.value = p;
-                // Shorten: "Person 1: <description>" for clarity
+                opt.dataset.subjectType = 'person';
                 opt.textContent = `${tReplace('admin.quiz_person_n', {n: i + 1}) || 'Person ' + (i + 1)}: ${p}`;
                 personSelect.appendChild(opt);
             });
+            // For "missing" quiz, also show prominent animals/objects
+            if (type === 'missing' && subjects.length > 0) {
+                const sep = document.createElement('option');
+                sep.disabled = true;
+                sep.textContent = `── ${t('admin.quiz_animals_objects') || 'Animals / Objects'} ──`;
+                personSelect.appendChild(sep);
+                subjects.forEach((s, i) => {
+                    const opt = document.createElement('option');
+                    opt.value = s.desc;
+                    opt.dataset.subjectType = s.type || 'object';
+                    const icon = s.type === 'animal' ? '\uD83D\uDC3E' : '\uD83D\uDCE6';
+                    const label = s.type === 'animal'
+                        ? (tReplace('admin.quiz_animal_n', {n: i + 1}) || `Animal ${i + 1}`)
+                        : (tReplace('admin.quiz_object_n', {n: i + 1}) || `Object ${i + 1}`);
+                    opt.textContent = `${icon} ${label}: ${s.desc}`;
+                    personSelect.appendChild(opt);
+                });
+            }
 
             // Answer name fields
             const rowA = document.getElementById('sdp-row-a');
@@ -3330,9 +3379,9 @@
                 ansB.placeholder = t('admin.quiz_wrong_zoom') || 'Wrong answer (decoy)';
                 ansC.placeholder = t('admin.quiz_wrong_zoom') || 'Wrong answer (decoy)';
             } else if (type === 'missing') {
-                ansA.placeholder = t('admin.quiz_correct_missing') || 'Correct name (who was removed)';
-                ansB.placeholder = t('admin.quiz_wrong_missing') || 'Wrong name (decoy)';
-                ansC.placeholder = t('admin.quiz_wrong_missing') || 'Wrong name (decoy)';
+                ansA.placeholder = t('admin.quiz_correct_missing') || 'Correct answer (what was removed)';
+                ansB.placeholder = t('admin.quiz_wrong_missing') || 'Wrong answer (decoy)';
+                ansC.placeholder = t('admin.quiz_wrong_missing') || 'Wrong answer (decoy)';
                 ansD.placeholder = t('admin.quiz_4th_placeholder') || '4th option (e.g. Nobody is missing)';
             } else {
                 ansA.placeholder = t('admin.quiz_correct_placeholder') || 'Correct name';
