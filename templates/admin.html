@@ -3454,9 +3454,9 @@
             }
 
             const createdSlideId = activeSlideId;
-            // Refresh experience to get updated slide data — preserve scroll position
-            closeSlideDetail();
+            // Refresh experience to get updated slide data — reopen detail panel
             await openExperience(currentExperience.id, { scrollToSlide: createdSlideId });
+            openSlideDetail(createdSlideId);
 
             // Poll for silhouette generation to complete, then refresh image
             if (createdSlideId) {
