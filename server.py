@@ -550,8 +550,8 @@ async def update_media_category(media_id: int, request: Request, db=Depends(get_
     return {"ok": True}
 
 @app.post("/api/media/{media_id}/analyze-people")
-async def analyze_people(media_id: int, db=Depends(get_db)):
-    """Identify people in a photo. Uses Gemini if available, local rembg fallback otherwise."""
+async def analyze_people(media_id: int, request: Request, db=Depends(get_db)):
+    """Identify people in a photo. Engine selected by JSON body {use_gemini: bool}."""
     media = await db.get(Media, media_id)
     if not media:
         raise HTTPException(404)
@@ -559,7 +559,30 @@ async def analyze_people(media_id: int, db=Depends(get_db)):
     if not os.path.exists(source_path):
         raise HTTPException(404, "Media file not found")
 
-    # Try Gemini first (provides descriptions + positions)
+    # Parse optional body for engine preference
+    try:
+        data = await request.json()
+    except Exception:
+        data = {}
+    use_gemini = data.get("use_gemini", None)  # None = auto
+
+    # If explicitly requesting Gemini
+    if use_gemini is True:
+        if not os.environ.get("GEMINI_API_KEY"):
+            raise HTTPException(400, "Gemini API key required. Add it in Settings.")
+        result = await asyncio.to_thread(analyze_people_gemini, source_path)
+        if result:
+            return result
+        raise HTTPException(500, "Gemini could not detect people in photo")
+
+    # If explicitly requesting local
+    if use_gemini is False:
+        result = await asyncio.to_thread(_analyze_people_local, source_path)
+        if result:
+            return result
+        raise HTTPException(500, "Local engine could not detect people in photo")
+
+    # Auto: Try Gemini first (provides descriptions + positions), fall back to local
     if os.environ.get("GEMINI_API_KEY"):
         result = await asyncio.to_thread(analyze_people_gemini, source_path)
         if result:
@@ -782,6 +805,38 @@ async def repair_all_dates(db=Depends(get_db)):
     await db.commit()
     return {"total": len(all_media), "fixed": fixed}
 
+@app.post("/api/media/{media_id}/rotate")
+async def rotate_media(media_id: int, request: Request, db=Depends(get_db)):
+    """Rotate an image 90 degrees left or right. Regenerates thumbnail."""
+    data = await request.json()
+    direction = data.get("direction", "right")  # "left" or "right"
+    media = await db.get(Media, media_id)
+    if not media:
+        raise HTTPException(404)
+    source_path = media.web_path or media.file_path
+    if not os.path.exists(source_path):
+        raise HTTPException(404, "File not found")
+    if media.media_type.value != "image":
+        raise HTTPException(400, "Can only rotate images")
+
+    angle = -90 if direction == "right" else 90
+
+    def do_rotate():
+        from PIL import Image
+        img = Image.open(source_path)
+        img = img.rotate(angle, expand=True)
+        img.save(source_path, quality=95)
+        # Regenerate thumbnail
+        thumb_path = media.thumbnail_path
+        if thumb_path:
+            thumb = img.copy()
+            thumb.thumbnail((400, 400))
+            thumb.save(thumb_path, quality=85)
+
+    await asyncio.to_thread(do_rotate)
+    return {"ok": True}
+
+
 @app.post("/api/media/{media_id}/analyze-zoom")
 async def analyze_zoom(media_id: int, db=Depends(get_db)):
     """Use Gemini to find an interesting detail for a Zoom In quiz."""
@@ -828,10 +883,10 @@ async def make_quiz_from_slide(slide_id: int, request: Request, db=Depends(get_d
     if not os.path.exists(source_path):
         raise HTTPException(404, "Media file not found")
 
-    # Build answers list: 1 correct + 0-2 wrong (dynamic based on people count)
+    # Build answers list: 1 correct + up to 3 wrong
     import random
     answers = [{"text": correct, "is_correct": True}]
-    for w in wrong[:2]:
+    for w in wrong[:3]:
         answers.append({"text": w, "is_correct": False})
     random.shuffle(answers)
     letter_keys = ["a", "b", "c", "d"]
@@ -847,7 +902,7 @@ async def make_quiz_from_slide(slide_id: int, request: Request, db=Depends(get_d
     slide.answer_a = answers[0]["text"] if len(answers) > 0 else None
     slide.answer_b = answers[1]["text"] if len(answers) > 1 else None
     slide.answer_c = answers[2]["text"] if len(answers) > 2 else None
-    slide.answer_d = None
+    slide.answer_d = answers[3]["text"] if len(answers) > 3 else None
     slide.correct_answer = correct_letter
     await db.commit()
 
@@ -921,6 +976,85 @@ async def make_quiz_from_slide(slide_id: int, request: Request, db=Depends(get_d
     _bg_tasks.add(task)
     task.add_done_callback(_bg_tasks.discard)
     return {"ok": True, "slide_id": slide_id, "correct_answer": correct_letter, "generating": True}
+
+
+@app.post("/api/slides/{slide_id}/regenerate")
+async def regenerate_quiz_image(slide_id: int, request: Request, db=Depends(get_db)):
+    """Regenerate the quiz image (silhouette/missing/zoom) keeping answers intact.
+    Accepts JSON: {use_gemini, person_to_remove, person_index, positions, bbox}"""
+    data = await request.json()
+    use_gemini = data.get("use_gemini", False)
+
+    slide = await db.get(Slide, slide_id)
+    if not slide or slide.slide_type != SlideType.GAME:
+        raise HTTPException(404, "No quiz slide found")
+    media = await db.get(Media, slide.media_id)
+    if not media:
+        raise HTTPException(404)
+
+    source_path = media.web_path or media.file_path
+    if not os.path.exists(source_path):
+        raise HTTPException(404, "Media file not found")
+
+    quiz_type = slide.quiz_type or "shadow"
+    if use_gemini and not os.environ.get("GEMINI_API_KEY"):
+        raise HTTPException(400, "AI features need a Gemini key. Add it in Settings.")
+    if quiz_type == "missing" and not os.environ.get("GEMINI_API_KEY"):
+        raise HTTPException(400, "Missing quiz requires Gemini API key.")
+
+    # Clean old silhouette
+    if slide.silhouette_path and os.path.exists(slide.silhouette_path):
+        os.remove(slide.silhouette_path)
+    slide.silhouette_path = None
+    await db.commit()
+
+    _silhouette_tasks[slide_id] = {"status": "generating", "warning": None}
+
+    async def _regen():
+        try:
+            correct_name = slide.correct_answer  # letter
+            # Find the correct answer text
+            correct_text = getattr(slide, f"answer_{correct_name}", "") or ""
+
+            if quiz_type == "zoom":
+                bbox = data.get("bbox") or {"x": 25, "y": 25, "w": 25, "h": 25}
+                path = await asyncio.to_thread(
+                    generate_zoom_crop, source_path, bbox, SILHOUETTE_DIR, slide_id
+                )
+            elif quiz_type == "missing":
+                person_desc = data.get("person_to_remove", correct_text)
+                path = await asyncio.to_thread(
+                    remove_person_gemini, source_path, person_desc, SILHOUETTE_DIR, slide_id
+                )
+            else:  # shadow
+                person_desc = data.get("person_to_remove", correct_text)
+                person_idx = data.get("person_index", 0)
+                if use_gemini and person_desc:
+                    path = await asyncio.to_thread(
+                        silhouette_person_gemini, source_path, person_desc, SILHOUETTE_DIR, slide_id
+                    )
+                else:
+                    positions = data.get("positions", None)
+                    path = await asyncio.to_thread(
+                        silhouette_person_local, source_path, person_idx, SILHOUETTE_DIR, slide_id, positions
+                    )
+
+            if not path:
+                _silhouette_tasks[slide_id] = {"status": "error", "warning": "Generation failed — no image returned"}
+                return
+            async with SessionLocal() as sdb:
+                s = await sdb.get(Slide, slide_id)
+                if s:
+                    s.silhouette_path = path
+                    await sdb.commit()
+            _silhouette_tasks[slide_id] = {"status": "done", "warning": None}
+        except Exception as e:
+            _silhouette_tasks[slide_id] = {"status": "error", "warning": str(e)}
+
+    task = asyncio.create_task(_regen())
+    _bg_tasks.add(task)
+    task.add_done_callback(_bg_tasks.discard)
+    return {"ok": True, "generating": True}
 
 
 @app.post("/api/slides/{slide_id}/remove-quiz")
@@ -2371,6 +2505,9 @@ async def advance_slide(code, direction):
 
     room["current_slide_index"] = new_idx
     room["state"] = "playing"
+    # Reset live answer/correct overlays on slide change
+    room["show_live_answers"] = False
+    room["show_correct_answer"] = False
     task = asyncio.create_task(_sync_room_to_db(code))
     _bg_tasks.add(task)
     task.add_done_callback(_bg_tasks.discard)
@@ -3172,18 +3309,35 @@ async def submit_answer(sid, data):
 
     await sio.emit("answer_submitted", {"player_id": player["id"]}, to=sid)
 
-    # Notify admin of live stats
+    # Notify admin of live stats (with player names per answer)
     answers = room["answers"].get(slide_id, {})
     answer_counts = {"a": 0, "b": 0, "c": 0, "d": 0}
-    for a in answers.values():
+    answer_players = {"a": [], "b": [], "c": [], "d": []}
+    # Build player lookup by id
+    players_by_id = {p["id"]: p for p in room["players"].values()}
+    for pid, a in answers.items():
         if a["answer"] in answer_counts:
             answer_counts[a["answer"]] += 1
+            p = players_by_id.get(pid)
+            if p:
+                answer_players[a["answer"]].append(p["nickname"])
 
-    await sio.emit("live_stats", {
+    live_stats_payload = {
         "answered": len(answers),
         "total": len(room["players"]),
         "answer_counts": answer_counts,
-    }, room=f"admin_{code}")
+        "answer_players": answer_players,
+    }
+    await sio.emit("live_stats", live_stats_payload, room=f"admin_{code}")
+
+    # Forward to display (without player names — just counts)
+    if room.get("show_live_answers"):
+        display_payload = {
+            "answered": len(answers),
+            "total": len(room["players"]),
+            "answer_counts": answer_counts,
+        }
+        await sio.emit("live_stats", display_payload, room=f"display_{code}")
 
     # Update admin scoreboard with latest scores
     await sio.emit("player_list", get_player_list(code), room=f"admin_{code}")
@@ -3191,6 +3345,60 @@ async def submit_answer(sid, data):
     # Auto-reveal if all players answered
     if len(answers) >= len(room["players"]):
         await do_reveal(code)
+
+
+# ── Live answer results overlay (A) and correct answer overlay (C) ───────────
+
+@sio.event
+async def toggle_live_answers(sid, data):
+    """Toggle live answer results on projected display (A key)."""
+    code = data.get("code")
+    room = active_rooms.get(code)
+    if not room:
+        return
+    room["show_live_answers"] = not room.get("show_live_answers", False)
+    show = room["show_live_answers"]
+
+    if show:
+        # Send current stats to display
+        idx = room["current_slide_index"]
+        slide = room["slides"][idx] if 0 <= idx < len(room["slides"]) else None
+        if slide and slide["slide_type"] == "game":
+            slide_id = slide["id"]
+            answers = room["answers"].get(slide_id, {})
+            answer_counts = {"a": 0, "b": 0, "c": 0, "d": 0}
+            for a in answers.values():
+                if a["answer"] in answer_counts:
+                    answer_counts[a["answer"]] += 1
+            await sio.emit("live_stats", {
+                "answered": len(answers),
+                "total": len(room["players"]),
+                "answer_counts": answer_counts,
+            }, room=f"display_{code}")
+
+    await sio.emit("show_live_answers", {"show": show}, room=f"display_{code}")
+    await sio.emit("show_live_answers", {"show": show}, room=f"admin_{code}")
+
+
+@sio.event
+async def toggle_correct_answer(sid, data):
+    """Toggle correct answer highlight on projected display (C key)."""
+    code = data.get("code")
+    room = active_rooms.get(code)
+    if not room:
+        return
+    room["show_correct_answer"] = not room.get("show_correct_answer", False)
+    show = room["show_correct_answer"]
+
+    correct = None
+    if show:
+        idx = room["current_slide_index"]
+        slide = room["slides"][idx] if 0 <= idx < len(room["slides"]) else None
+        if slide and slide["slide_type"] == "game":
+            correct = slide.get("correct_answer")
+
+    await sio.emit("show_correct_answer", {"show": show, "correct": correct}, room=f"display_{code}")
+    await sio.emit("show_correct_answer", {"show": show, "correct": correct}, room=f"admin_{code}")
 
 
 # ══════════════════════════════════════════════════════════════════════════════

@@ -354,6 +354,90 @@
         max-width: 450px;
         min-width: 280px;
     }
+    /* ═══ LIVE ANSWER RESULTS OVERLAY ═══ */
+    .live-answers-overlay {
+        position: absolute;
+        bottom: 56px; /* above bottom bar */
+        left: 0;
+        right: 0;
+        z-index: 20;
+        background: linear-gradient(to top, rgba(10, 18, 32, 0.95) 0%, rgba(10, 18, 32, 0.85) 70%, rgba(10, 18, 32, 0.0) 100%);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: flex-end;
+        padding: 40px 40px 16px;
+        pointer-events: none;
+        animation: overlaySlideUp 0.4s ease-out;
+    }
+    @keyframes overlaySlideUp {
+        from { opacity: 0; transform: translateY(30px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+    .live-answers-chart {
+        display: flex;
+        align-items: flex-end;
+        justify-content: center;
+        gap: clamp(8px, 2vw, 24px);
+        width: 100%;
+        max-width: 1000px;
+        height: 32vh;
+    }
+    .live-answer-col {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 6px;
+        max-width: 220px;
+        height: 100%;
+        justify-content: flex-end;
+    }
+    .live-answer-stats {
+        text-align: center;
+        font-family: var(--font-heading, 'Ubuntu', sans-serif);
+    }
+    .live-answer-pct {
+        font-size: clamp(20px, 3.5vw, 40px);
+        font-weight: 800;
+        color: #fff;
+        line-height: 1.1;
+    }
+    .live-answer-count {
+        font-size: clamp(11px, 1.2vw, 16px);
+        color: rgba(255,255,255,0.7);
+        font-weight: 500;
+    }
+    .live-answer-bar-wrap {
+        width: 100%;
+        border-radius: 10px 10px 0 0;
+        overflow: hidden;
+        transition: height 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+        min-height: 6px;
+    }
+    .live-answer-bar-wrap.answer-a { background: var(--answer-a, #5ba3d9); }
+    .live-answer-bar-wrap.answer-b { background: var(--answer-b, #4caf50); }
+    .live-answer-bar-wrap.answer-c { background: var(--answer-c, #e94b64); }
+    .live-answer-bar-wrap.answer-d { background: var(--answer-d, #ffa726); }
+    .live-answer-bar-wrap.correct-glow {
+        box-shadow: 0 0 24px 6px rgba(16, 185, 129, 0.5);
+        outline: 3px solid #10b981;
+        outline-offset: -1px;
+    }
+    .live-answer-bar-wrap.wrong-dim { opacity: 0.25; filter: saturate(0.3); }
+    .live-answer-label {
+        font-family: var(--font-heading, 'Ubuntu', sans-serif);
+        font-size: clamp(13px, 1.8vw, 20px);
+        font-weight: 700;
+        color: #fff;
+        text-align: center;
+        padding: 6px 4px;
+        line-height: 1.2;
+        word-break: break-word;
+    }
+    .live-answer-label.correct-label { color: #34d399; }
+    .live-answer-label.wrong-label { opacity: 0.35; }
+
     /* Crowdpurr-style answer bars */
     .display-answer-bar {
         padding: 20px 28px;
@@ -844,6 +928,13 @@
                 <!-- Populated dynamically -->
             </div>
         </div>
+        <!-- Live Answer Results Overlay (toggled by admin A key) -->
+        <div id="live-answers-overlay" class="live-answers-overlay" style="display:none;">
+            <div class="live-answers-chart" id="live-answers-chart">
+                <!-- Populated dynamically: 4 colored columns -->
+            </div>
+        </div>
+
         <div class="game-bottom-bar" id="game-bottom-bar">
             <div class="game-bottom-qr">
                 <img id="game-qr-img" src="" alt="QR">
@@ -919,6 +1010,10 @@
     let topPlayers = [];  // [{nickname, score}, ...] up to 3
     let playerCount = 0;
     let showPersistent = true;  // can be toggled by admin
+    let displayLiveStats = null;
+    let displayShowLiveAnswers = false;
+    let displayShowCorrectAnswer = false;
+    let displayCorrectKey = null;
 
     function updatePersistentBar() {
         const bar = document.getElementById('persistent-bar');
@@ -1056,6 +1151,28 @@
         socket.on('timer_start', (data) => {
             clearTimeout(globalThis._timerFallback);
             startDisplayTimer(data.duration, data.deadline);
+        });
+
+        socket.on('live_stats', (data) => {
+            displayLiveStats = data;
+            if (displayShowLiveAnswers) renderLiveAnswersOverlay();
+        });
+
+        socket.on('show_live_answers', (data) => {
+            displayShowLiveAnswers = data.show;
+            const overlay = document.getElementById('live-answers-overlay');
+            if (data.show) {
+                overlay.style.display = '';
+                renderLiveAnswersOverlay();
+            } else {
+                overlay.style.display = 'none';
+            }
+        });
+
+        socket.on('show_correct_answer', (data) => {
+            displayShowCorrectAnswer = data.show;
+            displayCorrectKey = data.correct || null;
+            if (displayShowLiveAnswers) renderLiveAnswersOverlay();
         });
 
         socket.on('reveal', (data) => {
@@ -1330,6 +1447,12 @@
         showDScreen('d-game');
         document.getElementById('score-overlay').style.display = 'none';
         document.getElementById('photo-year-badge').style.display = 'none';
+        // Reset live answer overlay on new slide
+        document.getElementById('live-answers-overlay').style.display = 'none';
+        displayShowLiveAnswers = false;
+        displayShowCorrectAnswer = false;
+        displayCorrectKey = null;
+        displayLiveStats = null;
         const silImg = document.getElementById('game-silhouette');
         silImg.onerror = () => { silImg.style.display = 'none'; };
         silImg.src = slide.silhouette_url || slide.media_url;
@@ -1469,9 +1592,48 @@
         if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
     }
 
+    // ═══ Live Answer Results Overlay ═══
+    function renderLiveAnswersOverlay() {
+        const chart = document.getElementById('live-answers-chart');
+        if (!displayLiveStats || !currentSlide) { chart.innerHTML = ''; return; }
+
+        const counts = displayLiveStats.answer_counts || {};
+        const totalAnswered = displayLiveStats.answered || 0;
+        const keys = ['a', 'b', 'c', 'd'];
+        const labels = {
+            a: currentSlide.answer_a,
+            b: currentSlide.answer_b,
+            c: currentSlide.answer_c,
+            d: currentSlide.answer_d,
+        };
+        const maxCount = Math.max(1, ...keys.map(k => counts[k] || 0));
+
+        chart.innerHTML = keys.filter(k => labels[k]).map(k => {
+            const count = counts[k] || 0;
+            const pct = totalAnswered > 0 ? Math.round((count / totalAnswered) * 100) : 0;
+            const barHeight = totalAnswered > 0 ? Math.max(5, (count / maxCount) * 100) : 5;
+            const isCorrect = displayShowCorrectAnswer && displayCorrectKey === k;
+            const isWrong = displayShowCorrectAnswer && displayCorrectKey && displayCorrectKey !== k;
+            const barClass = isCorrect ? ' correct-glow' : isWrong ? ' wrong-dim' : '';
+            const labelClass = isCorrect ? ' correct-label' : isWrong ? ' wrong-label' : '';
+            return `<div class="live-answer-col">
+                <div class="live-answer-stats" ${isWrong ? 'style="opacity:0.3;"' : ''}>
+                    <div class="live-answer-pct">${pct}%</div>
+                    <div class="live-answer-count">${count} ${count === 1 ? 'answer' : 'answers'}</div>
+                </div>
+                <div class="live-answer-bar-wrap answer-${k}${barClass}" style="height:${barHeight}%;"></div>
+                <div class="live-answer-label${labelClass}">${k.toUpperCase()}. ${escapeHtml(labels[k])}</div>
+            </div>`;
+        }).join('');
+    }
+
     // ═══ Reveal ═══
     function showReveal(data) {
         stopTimer();
+        // Hide live answers overlay on reveal
+        document.getElementById('live-answers-overlay').style.display = 'none';
+        displayShowLiveAnswers = false;
+        displayShowCorrectAnswer = false;
         // Track stats for score overlay
         if (data.stats) {
             lastRevealStats = {

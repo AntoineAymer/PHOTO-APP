@@ -189,7 +189,7 @@
     }
     /* 3-column game layout */
     .game-3col {
-        flex: 1; display: grid; grid-template-columns: minmax(340px, 420px) 1fr minmax(300px, 420px);
+        flex: 1; display: grid; grid-template-columns: minmax(380px, 480px) 1fr minmax(300px, 420px);
         gap: 10px; padding: 10px; overflow: hidden;
         min-height: 0;
     }
@@ -450,6 +450,17 @@
         padding: 10px 16px; border-top: 1px solid var(--border-color);
         display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
     }
+    .exp-right-footer.has-selection {
+        position: sticky; bottom: 0; z-index: 50;
+        background: linear-gradient(135deg, rgba(239,68,68,0.15) 0%, rgba(30,41,59,0.98) 30%);
+        border-top: 2px solid #ef4444;
+        padding: 12px 16px;
+        animation: selectionBarPulse 0.3s ease;
+    }
+    @keyframes selectionBarPulse {
+        from { transform: translateY(4px); opacity: 0.7; }
+        to { transform: translateY(0); opacity: 1; }
+    }
     .show-grid {
         display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 8px;
     }
@@ -479,10 +490,23 @@
         background: linear-gradient(transparent, rgba(0,0,0,0.85));
         font-size: 9px; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     }
+    .sg-item .sg-remove-btn {
+        position: absolute; top: 4px; left: 4px; z-index: 5;
+        width: 22px; height: 22px; border-radius: 50%;
+        background: rgba(239, 68, 68, 0.85); border: 2px solid rgba(255,255,255,0.7);
+        color: #fff; font-size: 12px; font-weight: 700;
+        display: none; align-items: center; justify-content: center;
+        cursor: pointer; line-height: 1;
+        transition: transform 0.1s, background 0.15s;
+        backdrop-filter: blur(4px);
+    }
+    .sg-item:hover .sg-remove-btn { display: flex; }
+    .sg-item .sg-remove-btn:hover { background: #ef4444; transform: scale(1.15); }
     /* Quiz side-by-side: original + quiz image */
     .sg-item.sg-quiz-pair {
         grid-column: span 2; aspect-ratio: 2 / 1;
-        border-color: rgba(18,171,219,0.25);
+        border-color: var(--accent-blue);
+        box-shadow: 0 0 8px rgba(0,112,173,0.4);
     }
     .sg-quiz-pair .sg-pair-wrap {
         display: flex; width: 100%; height: 100%; position: relative;
@@ -1229,10 +1253,24 @@
                     <span><kbd style="background:rgba(255,255,255,0.08); padding:1px 5px; border-radius:3px; font-family:monospace; border:1px solid rgba(255,255,255,0.1);">R</kbd> Scores</span>
                     <span><kbd style="background:rgba(255,255,255,0.08); padding:1px 5px; border-radius:3px; font-family:monospace; border:1px solid rgba(255,255,255,0.1);">&rarr;</kbd> Next</span>
                     <span><kbd style="background:rgba(255,255,255,0.08); padding:1px 5px; border-radius:3px; font-family:monospace; border:1px solid rgba(255,255,255,0.1);">&larr;</kbd> Back</span>
+                    <span><kbd style="background:rgba(255,255,255,0.08); padding:1px 5px; border-radius:3px; font-family:monospace; border:1px solid rgba(255,255,255,0.1);">A</kbd> Answers</span>
+                    <span><kbd style="background:rgba(255,255,255,0.08); padding:1px 5px; border-radius:3px; font-family:monospace; border:1px solid rgba(255,255,255,0.1);">C</kbd> Correct</span>
+                </div>
+
+                <!-- Live overlay toggles (A / C) -->
+                <div id="gp-overlay-toggles" style="display:none; margin-top:10px; display:none;">
+                    <div style="display:flex; gap:6px;">
+                        <button class="big-btn big-btn-secondary" id="btn-live-answers" onclick="toggleLiveAnswers()" style="flex:1; min-height:36px; font-size:12px; padding:6px 10px;">
+                            <kbd style="background:rgba(255,255,255,0.12); padding:1px 5px; border-radius:3px; font-family:monospace; font-size:11px; border:1px solid rgba(255,255,255,0.15); margin-right:4px;">A</kbd> Live Answers
+                        </button>
+                        <button class="big-btn big-btn-secondary" id="btn-correct-answer" onclick="toggleCorrectAnswer()" style="flex:1; min-height:36px; font-size:12px; padding:6px 10px;">
+                            <kbd style="background:rgba(255,255,255,0.12); padding:1px 5px; border-radius:3px; font-family:monospace; font-size:11px; border:1px solid rgba(255,255,255,0.15); margin-right:4px;">C</kbd> Correct Answer
+                        </button>
+                    </div>
                 </div>
 
                 <!-- Live stats -->
-                <div id="gp-stats" style="display:none; margin-top:12px;">
+                <div id="gp-stats" style="display:none; margin-top:10px;">
                     <div style="display:flex; justify-content:space-between; margin-bottom:6px;">
                         <span style="font-size:13px; color:var(--text-muted);" data-t="admin.live_answers">Answers</span>
                         <span style="font-size:13px; font-weight:600;" id="gp-answered-count">0 / 0</span>
@@ -2142,7 +2180,12 @@
     }
 
     let allMediaList = [];
-    async function openExperience(id) {
+    async function openExperience(id, opts = {}) {
+        // Save scroll position of grid before re-render
+        const scrollEl = document.getElementById('show-panel-body');
+        const savedScroll = scrollEl ? scrollEl.scrollTop : 0;
+        const restoreSlideId = opts.scrollToSlide || null;
+
         const [expRes] = await Promise.all([
             fetch(`/api/experiences/${id}`),
             loadPickerData(), // preload for picker
@@ -2152,6 +2195,17 @@
         showSection('editor');
         renderExperienceEditor();
         loadHistory(id);
+
+        // Restore scroll position or scroll to specific slide
+        requestAnimationFrame(() => {
+            const newScrollEl = document.getElementById('show-panel-body');
+            if (!newScrollEl) return;
+            if (restoreSlideId) {
+                const slideEl = document.querySelector(`.sg-item[data-slide-id="${restoreSlideId}"]`);
+                if (slideEl) { slideEl.scrollIntoView({ block: 'center', behavior: 'instant' }); return; }
+            }
+            newScrollEl.scrollTop = savedScroll;
+        });
     }
 
     let showSelectedForRemoval = new Set();
@@ -2285,8 +2339,8 @@
                         <button class="picker-page-btn" onclick="showSelectAll()" style="color:var(--accent-light-blue);">Select all</button>
                         <button class="picker-page-btn" onclick="showInvertSelection()">Invert</button>
                         <button class="picker-page-btn" onclick="showSelectNone()">Deselect all</button>
-                        <button class="btn btn-secondary" id="show-remove-btn" onclick="removeSelectedSlides(${exp.id})" style="margin-left:auto; color:#ef4444; display:none; min-height:32px; font-size:12px;">
-                            Remove selected
+                        <button class="btn btn-danger" id="show-remove-btn" onclick="removeSelectedSlides(${exp.id})" style="margin-left:auto; display:none; min-height:40px; font-size:14px; font-weight:700; padding:8px 18px; gap:6px;">
+                            &#128465; Remove selected
                         </button>
                     </div>
                 </div>
@@ -2304,7 +2358,24 @@
                         <button onclick="closeSlideDetail()" style="background:none; border:none; color:var(--text-muted); cursor:pointer; font-size:18px; padding:4px;">&#10005;</button>
                     </div>
                     <div class="exp-detail-body">
-                        <!-- Images: original + silhouette side by side -->
+                        <!-- ═══ SECTION 1: File info + actions bar ═══ -->
+                        <div style="margin-bottom:10px;">
+                            <div style="display:flex; align-items:center; gap:8px; margin-bottom:6px; flex-wrap:wrap;">
+                                <div id="sdp-filename" style="font-weight:600; font-size:13px; flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"></div>
+                                <div id="sdp-type-badge"></div>
+                            </div>
+                            <div style="display:flex; align-items:center; gap:6px; margin-bottom:8px; flex-wrap:wrap;">
+                                <span id="sdp-date" style="font-size:12px; color:var(--text-muted);"></span>
+                                <button class="btn btn-secondary" id="sdp-btn-fix-date" onclick="fixSlideDate()" style="padding:2px 8px; font-size:10px; min-height:24px;">Fix date</button>
+                                <div style="flex:1;"></div>
+                                <button class="btn btn-secondary" id="sdp-btn-rotate-left" onclick="rotateSlideMedia('left')" style="padding:4px 8px; font-size:14px; min-height:32px; min-width:36px;" title="Rotate left">&#8634;</button>
+                                <button class="btn btn-secondary" id="sdp-btn-rotate-right" onclick="rotateSlideMedia('right')" style="padding:4px 8px; font-size:14px; min-height:32px; min-width:36px;" title="Rotate right">&#8635;</button>
+                                <button class="btn btn-secondary" onclick="viewMediaFull()" style="padding:4px 10px; font-size:11px; min-height:32px;" title="View full size">&#128269; View full</button>
+                            </div>
+                            <div id="sdp-date-status" style="display:none; font-size:11px; color:var(--text-muted); margin-bottom:6px;"></div>
+                        </div>
+
+                        <!-- ═══ SECTION 2: Images ═══ -->
                         <div id="sdp-images" style="display:flex; gap:8px; margin-bottom:12px;">
                             <div style="flex:1; text-align:center;">
                                 <div style="font-size:10px; color:var(--text-muted); margin-bottom:4px;">Original</div>
@@ -2324,50 +2395,75 @@
                             </div>
                         </div>
                         <style>@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }</style>
-                        <!-- Quiz review/edit panel -->
-                        <div id="sdp-quiz-review" style="display:none; margin-bottom:12px; padding:10px 12px; background:var(--bg-elevated, #334155); border-radius:8px; font-size:12px;">
-                            <div style="font-weight:700; margin-bottom:4px; color:var(--accent-light-blue); font-size:13px;">Quiz answers</div>
-                            <div style="font-size:11px; color:var(--text-muted); margin-bottom:10px;">Edit names below. Order will be randomised during the game.</div>
-                            <div style="display:flex; gap:6px; margin-bottom:8px; align-items:center;">
-                                <span style="color:#4caf50; font-weight:700; width:20px; font-size:14px;">&#9733;</span>
-                                <input id="sdp-edit-a" class="input" style="flex:1; font-size:14px; min-height:36px; border-left:3px solid #4caf50;" placeholder="Correct name">
+
+                        <!-- ═══ SECTION 3: Quiz management (shown when quiz exists) ═══ -->
+                        <div id="sdp-quiz-review" style="display:none; margin-bottom:12px;">
+                            <!-- Remove quiz — top action -->
+                            <div style="display:flex; align-items:center; gap:8px; margin-bottom:10px;">
+                                <div style="font-size:14px; font-weight:700; color:var(--accent-light-blue); font-family:var(--font-heading);">Quiz Settings</div>
+                                <div style="flex:1;"></div>
+                                <button class="btn btn-secondary" onclick="removeQuizFromSlide()" id="sdp-btn-remove-quiz" style="padding:4px 12px; font-size:11px; min-height:28px; color:#ef4444; border-color:rgba(239,68,68,0.3);">
+                                    &#128465; Remove Quiz
+                                </button>
                             </div>
-                            <div style="font-size:11px; color:#4caf50; margin:-4px 0 8px 26px;">&#8593; Correct answer</div>
-                            <div style="display:flex; gap:6px; margin-bottom:8px; align-items:center;">
-                                <span style="color:#ef4444; font-weight:600; width:20px; font-size:14px;">&#10007;</span>
-                                <input id="sdp-edit-b" class="input" style="flex:1; font-size:14px; min-height:36px; border-left:3px solid #ef4444;" placeholder="Wrong name">
+                            <!-- Answers edit -->
+                            <div style="padding:10px 12px; background:var(--bg-elevated, #334155); border-radius:8px; font-size:12px; margin-bottom:10px;">
+                                <div style="font-size:11px; color:var(--text-muted); margin-bottom:8px;">Edit names below. Order will be randomised during the game.</div>
+                                <div style="display:flex; gap:6px; margin-bottom:6px; align-items:center;">
+                                    <span style="color:#4caf50; font-weight:700; width:20px; font-size:14px;">&#9733;</span>
+                                    <input id="sdp-edit-a" class="input" style="flex:1; font-size:13px; min-height:34px; border-left:3px solid #4caf50;" placeholder="Correct name">
+                                </div>
+                                <div style="display:flex; gap:6px; margin-bottom:6px; align-items:center;">
+                                    <span style="color:#ef4444; font-weight:600; width:20px; font-size:14px;">&#10007;</span>
+                                    <input id="sdp-edit-b" class="input" style="flex:1; font-size:13px; min-height:34px; border-left:3px solid #ef4444;" placeholder="Wrong name">
+                                </div>
+                                <div style="display:flex; gap:6px; margin-bottom:6px; align-items:center;">
+                                    <span style="color:#ef4444; font-weight:600; width:20px; font-size:14px;">&#10007;</span>
+                                    <input id="sdp-edit-c" class="input" style="flex:1; font-size:13px; min-height:34px; border-left:3px solid #ef4444;" placeholder="Wrong name">
+                                </div>
+                                <button class="btn btn-primary" onclick="saveQuizEdits()" style="padding:5px 14px; font-size:11px; min-height:30px; margin-top:4px;">Save changes</button>
+                                <div id="sdp-edit-status" style="margin-top:4px; font-size:11px;"></div>
                             </div>
-                            <div style="display:flex; gap:6px; margin-bottom:8px; align-items:center;">
-                                <span style="color:#ef4444; font-weight:600; width:20px; font-size:14px;">&#10007;</span>
-                                <input id="sdp-edit-c" class="input" style="flex:1; font-size:14px; min-height:36px; border-left:3px solid #ef4444;" placeholder="Wrong name">
+                            <!-- Regenerate image -->
+                            <div style="padding:10px 12px; border:1px solid var(--border-color); border-radius:8px; background:rgba(0,0,0,0.1);">
+                                <div style="font-size:12px; font-weight:700; color:var(--text-muted); margin-bottom:6px;">Regenerate quiz image</div>
+                                <div style="display:flex; gap:6px;">
+                                    <button class="btn btn-secondary" onclick="regenerateWithEngine('local')" style="flex:1; padding:6px 8px; font-size:11px; min-height:34px;">
+                                        &#9881; Local
+                                    </button>
+                                    <button class="btn btn-secondary" onclick="regenerateWithEngine('gemini')" style="flex:1; padding:6px 8px; font-size:11px; min-height:34px; border-color:rgba(18,171,219,0.4); color:var(--accent-light-blue);">
+                                        &#10024; Gemini AI
+                                    </button>
+                                </div>
+                                <div id="sdp-regen-status" style="display:none; margin-top:6px; font-size:11px;"></div>
                             </div>
-                            <div style="display:flex; gap:8px; flex-wrap:wrap;">
-                                <button class="btn btn-primary" onclick="saveQuizEdits()" style="padding:6px 14px; font-size:12px; min-height:34px;">Save changes</button>
-                                <button class="btn btn-secondary" onclick="regenerateSilhouette()" style="padding:6px 14px; font-size:12px; min-height:34px;">&#9881; Regenerate image</button>
-                            </div>
-                            <div id="sdp-edit-status" style="margin-top:6px; font-size:11px;"></div>
                         </div>
-                        <div id="sdp-filename" style="font-weight:600; font-size:14px; margin-bottom:4px;"></div>
-                        <div id="sdp-type-badge" style="margin-bottom:4px;"></div>
-                        <!-- Date info + fix -->
-                        <div style="display:flex; align-items:center; gap:8px; margin-bottom:12px;">
-                            <span id="sdp-date" style="font-size:12px; color:var(--text-muted);"></span>
-                            <button class="btn btn-secondary" id="sdp-btn-fix-date" onclick="fixSlideDate()" style="padding:4px 10px; font-size:11px; display:none;">Fix date</button>
+
+                        <!-- ═══ SECTION 4: Quiz creation (shown when no quiz) ═══ -->
+                        <!-- Engine toggle -->
+                        <div id="sdp-gemini-top" style="margin-bottom:10px; padding:8px 10px; border:1px solid rgba(18,171,219,0.25); border-radius:8px; background:rgba(18,171,219,0.04);">
+                            <div style="font-size:10px; font-weight:700; color:var(--text-muted); margin-bottom:5px; text-transform:uppercase; letter-spacing:0.5px;">Engine</div>
+                            <div style="display:flex; border-radius:6px; overflow:hidden; border:1px solid var(--border-color); font-size:12px; font-weight:700;">
+                                <button type="button" id="sdp-engine-local-btn" onclick="setEngine('local')" style="flex:1; padding:8px 6px; border:none; cursor:pointer; text-align:center; transition:all 0.15s; background:#1e5631; color:#34d399;">
+                                    &#9881; Local<br><span style="font-size:9px; font-weight:400;">Fast &middot; 1-2 people</span>
+                                </button>
+                                <button type="button" id="sdp-engine-gemini-btn" onclick="setEngine('gemini')" style="flex:1; padding:8px 6px; border:none; cursor:pointer; text-align:center; transition:all 0.15s; background:transparent; color:var(--text-muted);">
+                                    &#10024; Gemini AI<br><span style="font-size:9px; font-weight:400;">Names people &middot; groups</span>
+                                </button>
+                            </div>
+                            <input type="hidden" id="sdp-use-gemini-top" value="false">
+                            <input type="hidden" id="sdp-use-gemini-analyze" value="false">
                         </div>
-                        <div id="sdp-date-status" style="display:none; font-size:12px; color:var(--text-muted); margin-bottom:10px;"></div>
-                        <!-- Quiz type buttons -->
-                        <div id="sdp-quiz-btns" style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px;">
-                            <button class="btn btn-primary" onclick="startQuizOnSlide('shadow')" style="padding:8px 12px; font-size:12px;" id="sdp-btn-shadow">
+                        <!-- Create quiz buttons -->
+                        <div id="sdp-quiz-btns" style="display:flex; gap:6px; flex-wrap:wrap; margin-bottom:10px;">
+                            <button class="btn btn-primary" onclick="startQuizOnSlide('shadow')" style="flex:1; padding:8px 10px; font-size:12px; min-width:0;" id="sdp-btn-shadow">
                                 &#9899; Shadow
                             </button>
-                            <button class="btn btn-primary" onclick="startQuizOnSlide('missing')" style="padding:8px 12px; font-size:12px; background:#e94b64;" id="sdp-btn-missing">
+                            <button class="btn btn-primary" onclick="startQuizOnSlide('missing')" style="flex:1; padding:8px 10px; font-size:12px; background:#e94b64; min-width:0;" id="sdp-btn-missing">
                                 &#9986; Missing
                             </button>
-                            <button class="btn btn-primary" onclick="startQuizOnSlide('zoom')" style="padding:8px 12px; font-size:12px; background:#f59e0b;" id="sdp-btn-zoom">
+                            <button class="btn btn-primary" onclick="startQuizOnSlide('zoom')" style="flex:1; padding:8px 10px; font-size:12px; background:#f59e0b; min-width:0;" id="sdp-btn-zoom">
                                 &#128269; Zoom
-                            </button>
-                            <button class="btn btn-secondary" onclick="removeQuizFromSlide()" style="padding:8px 12px; font-size:12px; display:none;" id="sdp-btn-remove-quiz">
-                                Remove Quiz
                             </button>
                         </div>
                         <!-- Quiz form -->
@@ -2385,7 +2481,7 @@
                                 <!-- Step 2: Name the answer choices -->
                                 <div style="padding:10px 12px; background:rgba(255,255,255,0.03); border-radius:8px; border:1px solid var(--border-color, #334155);">
                                     <div style="font-size:13px; font-weight:700; color:var(--accent-light-blue); margin-bottom:4px;">What players will see</div>
-                                    <div style="font-size:11px; color:var(--text-muted); margin-bottom:10px;">Type 3 names. The order A B C will be randomised during the game.</div>
+                                    <div style="font-size:11px; color:var(--text-muted); margin-bottom:10px;" id="sdp-answer-hint">Type 3 names. The order A B C will be randomised during the game.</div>
                                     <div class="sdp-answer-row" id="sdp-row-a" style="display:flex; gap:6px; margin-bottom:8px; align-items:center;">
                                         <span style="color:#4caf50; font-weight:700; width:20px; font-size:14px;">&#9733;</span>
                                         <input id="sdp-ans-a" class="input" placeholder="Name of the person above" style="flex:1; font-size:14px; min-height:40px; border-left:3px solid #4caf50;" id="sdp-ans-a-label">
@@ -2399,13 +2495,23 @@
                                         <span style="color:#ef4444; width:20px; font-weight:600; font-size:14px;">&#10007;</span>
                                         <input id="sdp-ans-c" class="input" placeholder="Wrong name (decoy)" style="flex:1; font-size:14px; min-height:40px; border-left:3px solid #ef4444;">
                                     </div>
+                                    <div id="sdp-row-d-wrapper" style="display:none; margin-bottom:8px; padding:8px 10px; border:1px solid rgba(255,167,38,0.3); border-radius:8px; background:rgba(255,167,38,0.05);">
+                                        <label style="display:flex; align-items:center; gap:8px; cursor:pointer; margin-bottom:6px;">
+                                            <input type="checkbox" id="sdp-d-enabled" checked onchange="toggle4thAnswer()" style="width:18px; height:18px; accent-color:#ffa726; cursor:pointer;">
+                                            <span style="font-size:12px; font-weight:600; color:#ffa726;">4th answer (decoy trap)</span>
+                                        </label>
+                                        <div class="sdp-answer-row" id="sdp-row-d" style="display:flex; gap:6px; align-items:center;">
+                                            <span style="color:#ffa726; width:20px; font-weight:600; font-size:14px;">&#10007;</span>
+                                            <input id="sdp-ans-d" class="input" placeholder="e.g. Nobody is missing / Personne" style="flex:1; font-size:14px; min-height:40px; border-left:3px solid #ffa726;">
+                                        </div>
+                                    </div>
                                 </div>
                                 <div style="display:flex; gap:8px; margin-top:4px; align-items:center;">
                                     <button class="btn btn-primary" onclick="confirmQuizOnSlide()" style="min-height:38px; padding:8px 16px; font-size:13px;">Create Quiz</button>
                                     <button class="btn btn-secondary" onclick="cancelQuizPanel()" style="min-height:38px; font-size:13px;">Cancel</button>
-                                    <label id="sdp-gemini-toggle" style="display:none; margin-left:auto; font-size:11px; color:var(--text-muted); cursor:pointer; white-space:nowrap;">
-                                        <input type="checkbox" id="sdp-use-gemini" style="margin-right:4px;">
-                                        Use Gemini AI instead
+                                    <label id="sdp-gemini-toggle" style="display:none; margin-left:auto; font-size:12px; color:var(--accent-light-blue); cursor:pointer; white-space:nowrap; padding:4px 8px; border:1px solid var(--border-color); border-radius:6px; background:rgba(18,171,219,0.08);">
+                                        <input type="checkbox" id="sdp-use-gemini" style="margin-right:5px; transform:scale(1.2); vertical-align:middle;">
+                                        ✨ Use Gemini AI
                                     </label>
                                 </div>
                             </div>
@@ -2541,9 +2647,11 @@
             const hasQuizPair = isGame && s.silhouette_url;
             const badge = isGame ? 'QUIZ' : (isVideo ? (s.duration ? `&#9654; ${formatDuration(s.duration)}` : '&#9654; Video') : '');
             const removeCls = showSelectedForRemoval.has(s.id) ? 'selected-remove' : '';
+            const removeBtn = `<button class="sg-remove-btn" onclick="event.stopPropagation(); quickRemoveSlide(${s.id}, '${escapeHtml(s.media_filename)}')" title="Remove">&times;</button>`;
             if (hasQuizPair) {
                 html += `<div class="sg-item sg-quiz-pair ${removeCls}"
                               data-slide-id="${s.id}" onclick="onSlideClick(event, ${s.id})">
+                            ${removeBtn}
                             <div class="sg-pair-wrap">
                                 <img src="${s.media_thumbnail}" alt="" loading="lazy">
                                 <div class="sg-pair-divider"></div>
@@ -2555,6 +2663,7 @@
             } else {
                 html += `<div class="sg-item ${removeCls}"
                               data-slide-id="${s.id}" onclick="onSlideClick(event, ${s.id})">
+                            ${removeBtn}
                             <img src="${s.silhouette_url || s.media_thumbnail}" alt="" loading="lazy">
                             ${isGenerating ? '<div class="sg-generating"><div style="font-size:22px; animation:spin 1.5s linear infinite;">&#9881;</div><div style="font-size:10px; margin-top:2px;">Generating...</div></div>' : ''}
                             ${badge ? `<span class="show-badge">${badge}</span>` : ''}
@@ -2592,9 +2701,11 @@
         const count = showSelectedForRemoval.size;
         const label = document.getElementById('show-remove-count');
         const btn = document.getElementById('show-remove-btn');
+        const footer = document.getElementById('show-panel-footer');
         if (label) label.textContent = count > 0 ? `${count} selected` : 'Click to select \u00b7 Drag to lasso \u00b7 Shift+click for range';
         if (btn) btn.style.display = count > 0 ? '' : 'none';
-        if (btn && count > 0) btn.textContent = `Remove ${count} selected`;
+        if (btn && count > 0) btn.innerHTML = `&#128465; Remove ${count} selected`;
+        if (footer) footer.classList.toggle('has-selection', count > 0);
     }
 
     async function removeSelectedSlides(expId) {
@@ -2765,6 +2876,13 @@
         if (layout) layout.classList.add('has-detail');
 
         const isGame = slide.slide_type === 'game';
+        const isVideo = slide.media_type === 'video';
+
+        // Hide rotate buttons for video
+        const rotL = document.getElementById('sdp-btn-rotate-left');
+        const rotR = document.getElementById('sdp-btn-rotate-right');
+        if (rotL) rotL.style.display = isVideo ? 'none' : '';
+        if (rotR) rotR.style.display = isVideo ? 'none' : '';
 
         // Populate panel — always show original
         document.getElementById('sdp-thumb').src = slide.media_thumbnail;
@@ -2843,23 +2961,23 @@
         } else {
             dateEl.textContent = 'No date';
         }
-        fixBtn.style.display = (slide.media_type === 'IMAGE' || slide.media_type === 'image') ? '' : 'none';
+        fixBtn.style.display = '';
 
-        // Show/hide quiz buttons vs remove-quiz button
-        const btnShadow = document.getElementById('sdp-btn-shadow');
-        const btnMissing = document.getElementById('sdp-btn-missing');
-        const btnZoom = document.getElementById('sdp-btn-zoom');
-        const btnRemove = document.getElementById('sdp-btn-remove-quiz');
+        // Show/hide sections based on state
+        const quizBtns = document.getElementById('sdp-quiz-btns');
+        const geminiTop = document.getElementById('sdp-gemini-top');
         if (isGame) {
-            btnShadow.style.display = 'none';
-            btnMissing.style.display = 'none';
-            btnZoom.style.display = 'none';
-            btnRemove.style.display = '';
+            // Quiz exists: hide creation, show management
+            quizBtns.style.display = 'none';
+            if (geminiTop) geminiTop.style.display = 'none';
+        } else if (isVideo) {
+            // Video: hide all quiz UI
+            quizBtns.style.display = 'none';
+            if (geminiTop) geminiTop.style.display = 'none';
         } else {
-            btnShadow.style.display = '';
-            btnMissing.style.display = '';
-            btnZoom.style.display = '';
-            btnRemove.style.display = 'none';
+            // Photo without quiz: show creation
+            quizBtns.style.display = 'flex';
+            if (geminiTop) geminiTop.style.display = '';
         }
 
         // Reset quiz form
@@ -2872,7 +2990,7 @@
         if (!slide) return;
         const status = document.getElementById('sdp-date-status');
         status.style.display = '';
-        status.textContent = 'Asking Gemini to estimate the date...';
+        status.textContent = 'Reading metadata / estimating date...';
         try {
             const res = await fetch(`/api/media/${slide.media_id}/fix-date`, { method: 'POST' });
             const data = await res.json();
@@ -2886,11 +3004,64 @@
                 // Refresh the grid to reflect new date
                 filterShowGrid();
             } else {
-                status.textContent = 'Could not estimate a date for this photo.';
+                status.textContent = 'Could not find a date for this file.';
             }
         } catch (e) {
             status.textContent = `Error: ${e.message}`;
         }
+    }
+
+    async function rotateSlideMedia(direction) {
+        if (!activeSlideId || !currentExperience) return;
+        const slide = currentExperience.slides.find(s => s.id === activeSlideId);
+        if (!slide) return;
+        const thumb = document.getElementById('sdp-thumb');
+        thumb.style.opacity = '0.4';
+        try {
+            const res = await fetch(`/api/media/${slide.media_id}/rotate`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ direction })
+            });
+            if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.detail || 'Failed'); }
+            // Refresh thumbnail with cache bust
+            const bust = Date.now();
+            thumb.src = slide.media_thumbnail + '?t=' + bust;
+            // Also refresh the grid thumbnail
+            const gridEl = document.querySelector(`.sg-item[data-slide-id="${activeSlideId}"] img`);
+            if (gridEl) gridEl.src = slide.media_thumbnail + '?t=' + bust;
+            toast(`Rotated ${direction}`);
+        } catch (e) {
+            toast('Rotate failed: ' + e.message);
+        }
+        thumb.style.opacity = '1';
+    }
+
+    function viewMediaFull() {
+        if (!activeSlideId || !currentExperience) return;
+        const slide = currentExperience.slides.find(s => s.id === activeSlideId);
+        if (!slide) return;
+        const url = `/api/media/${slide.media_id}/file`;
+        // Full-screen lightbox overlay
+        const overlay = document.createElement('div');
+        overlay.style.cssText = 'position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.92);display:flex;align-items:center;justify-content:center;cursor:zoom-out;';
+        overlay.onclick = () => overlay.remove();
+        document.addEventListener('keydown', function esc(e) { if (e.key === 'Escape') { overlay.remove(); document.removeEventListener('keydown', esc); } });
+        if (slide.media_type === 'video') {
+            const vid = document.createElement('video');
+            vid.src = url;
+            vid.controls = true;
+            vid.autoplay = true;
+            vid.style.cssText = 'max-width:95vw;max-height:95vh;border-radius:8px;';
+            vid.onclick = (e) => e.stopPropagation();
+            overlay.appendChild(vid);
+        } else {
+            const img = document.createElement('img');
+            img.src = url;
+            img.style.cssText = 'max-width:95vw;max-height:95vh;object-fit:contain;border-radius:8px;';
+            overlay.appendChild(img);
+        }
+        document.body.appendChild(overlay);
     }
 
     function closeSlideDetail() {
@@ -2934,15 +3105,33 @@
                 document.getElementById('sdp-people-desc').textContent =
                     data.detail ? `Detail: ${data.detail}` : 'Analysis complete';
             } else {
-                const res = await fetch(`/api/media/${slide.media_id}/analyze-people`, { method: 'POST' });
+                const useGeminiAnalyze = document.getElementById('sdp-use-gemini-analyze')?.value === 'true';
+                const res = await fetch(`/api/media/${slide.media_id}/analyze-people`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ use_gemini: useGeminiAnalyze })
+                });
                 if (!res.ok) {
                     const err = await res.json().catch(() => ({}));
                     throw new Error(err.detail || 'Analysis failed');
                 }
                 data = await res.json();
                 pendingPositions = data.positions || null;
-                document.getElementById('sdp-people-desc').textContent =
-                    data.people?.length ? `${data.people.length} people detected` : 'Analysis complete';
+                const peopleCount = data.people?.length || 0;
+                const descEl = document.getElementById('sdp-people-desc');
+                const isLocal = data.source && data.source.startsWith('local');
+                if (isLocal && peopleCount <= 1 && type !== 'zoom') {
+                    descEl.innerHTML = `<div style="background:rgba(251,191,36,0.15); border:1px solid #fbbf24; border-radius:8px; padding:10px 12px; margin-top:4px;">
+                        <div style="color:#fbbf24; font-weight:700; font-size:13px; margin-bottom:6px;">&#9888; Local engine found only ${peopleCount} person</div>
+                        <div style="font-size:11px; color:var(--text-muted); margin-bottom:8px;">Group photos need Gemini AI to identify all people by name.</div>
+                        <button onclick="setEngine('gemini'); startQuizOnSlide('${type}')"
+                            style="background:var(--accent-blue); border:none; color:#fff; border-radius:6px; padding:8px 16px; font-size:12px; cursor:pointer; font-weight:700;">
+                            &#10024; Re-analyze with Gemini AI
+                        </button>
+                    </div>`;
+                } else {
+                    descEl.textContent = peopleCount ? `${peopleCount} people detected` : 'Analysis complete';
+                }
             }
 
             // Dynamic label based on quiz type
@@ -2961,16 +3150,21 @@
                 personPicker.style.display = 'none';
             }
 
-            // Show Gemini toggle for shadow quiz (local is default)
+            // Sync Gemini checkboxes — top-level one is the primary
             const geminiToggle = document.getElementById('sdp-gemini-toggle');
             const geminiCheckbox = document.getElementById('sdp-use-gemini');
-            if (type === 'shadow') {
-                geminiToggle.style.display = '';
-                geminiCheckbox.checked = false;
-            } else {
-                geminiToggle.style.display = 'none';
-                geminiCheckbox.checked = type === 'missing';  // missing always uses Gemini
+            const geminiTop = document.getElementById('sdp-use-gemini-top');
+            // For missing, auto-enable Gemini if not already checked
+            // For missing, auto-enable both AI checkboxes (Gemini required)
+            const geminiAnalyze = document.getElementById('sdp-use-gemini-analyze');
+            if (type === 'missing') {
+                setEngine('gemini');
             }
+            // Sync form checkbox from top-level
+            const useGemGen = document.getElementById('sdp-use-gemini-top')?.value === 'true';
+            if (geminiCheckbox) geminiCheckbox.checked = useGemGen;
+            // Hide old inline toggle — top-level one is always visible
+            if (geminiToggle) geminiToggle.style.display = 'none';
 
             // Populate person picker dropdown with Gemini descriptions
             const people = data.people || [];
@@ -2992,27 +3186,48 @@
                 personSelect.appendChild(opt);
             });
 
-            // Answer name fields — always show all 3, leave empty for admin to type names
+            // Answer name fields
             const rowA = document.getElementById('sdp-row-a');
             const rowB = document.getElementById('sdp-row-b');
             const rowC = document.getElementById('sdp-row-c');
+            const rowD = document.getElementById('sdp-row-d');
             const ansA = document.getElementById('sdp-ans-a');
             const ansB = document.getElementById('sdp-ans-b');
             const ansC = document.getElementById('sdp-ans-c');
+            const ansD = document.getElementById('sdp-ans-d');
+            const ansHint = document.getElementById('sdp-answer-hint');
             rowA.style.display = 'flex';
             rowB.style.display = 'flex';
             rowC.style.display = 'flex';
+            // Show 4th answer for missing quiz type
+            const show4th = type === 'missing';
+            const rowDWrapper = document.getElementById('sdp-row-d-wrapper');
+            const dCheckbox = document.getElementById('sdp-d-enabled');
+            rowDWrapper.style.display = show4th ? '' : 'none';
+            if (show4th) {
+                dCheckbox.checked = true;
+                rowD.style.display = 'flex';
+            }
+            ansHint.textContent = show4th
+                ? 'Type 3 person names + 4th decoy. Uncheck to remove it.'
+                : 'Type 3 names. The order A B C will be randomised during the game.';
             // Pre-fill with Gemini/local suggestions if available
             const quiz = data.quiz || {};
             ansA.value = quiz.correct || '';
             ansB.value = (quiz.wrong && quiz.wrong[0]) || '';
             ansC.value = (quiz.wrong && quiz.wrong[1]) || '';
+            ansD.value = show4th ? (quiz.wrong && quiz.wrong[2]) || 'Nobody is missing' : '';
 
             // Update placeholders based on quiz type
             if (type === 'zoom') {
                 ansA.placeholder = 'Correct answer';
                 ansB.placeholder = 'Wrong answer (decoy)';
                 ansC.placeholder = 'Wrong answer (decoy)';
+            } else if (type === 'missing') {
+                ansA.placeholder = 'Correct name (who was removed)';
+                ansB.placeholder = 'Wrong name (decoy)';
+                ansC.placeholder = 'Wrong name (decoy)';
+                ansD.placeholder = '4th option (e.g. Nobody is missing)';
             } else {
                 ansA.placeholder = 'Correct name';
                 ansB.placeholder = 'Wrong name (decoy)';
@@ -3033,8 +3248,10 @@
         const ansA = document.getElementById('sdp-ans-a').value.trim();
         const ansB = document.getElementById('sdp-ans-b').value.trim();
         const ansC = document.getElementById('sdp-ans-c').value.trim();
+        const ansD = document.getElementById('sdp-ans-d').value.trim();
+        const show4th = document.getElementById('sdp-d-enabled')?.checked || false;
 
-        // Validate all 3 names are filled
+        // Validate all required names are filled
         if (!ansA) { alert('Please type the correct name (★)'); return; }
         if (!ansB) { alert('Please type wrong name B'); return; }
         if (!ansC) { alert('Please type wrong name C'); return; }
@@ -3060,11 +3277,11 @@
                 body: JSON.stringify({
                     quiz_type: pendingQuizType,
                     correct: ansA,
-                    wrong: [ansB, ansC],
+                    wrong: (show4th && ansD) ? [ansB, ansC, ansD] : [ansB, ansC],
                     person_to_remove: personDesc || ansA,
                     person_index: Math.max(0, personIndex),
                     positions: pendingPositions || undefined,
-                    use_gemini: document.getElementById('sdp-use-gemini')?.checked || false,
+                    use_gemini: document.getElementById('sdp-use-gemini-top')?.value === 'true' || document.getElementById('sdp-use-gemini')?.checked || false,
                     bbox: pendingQuizType === 'zoom' ? pendingZoomBbox : undefined
                 })
             });
@@ -3074,9 +3291,9 @@
             }
 
             const createdSlideId = activeSlideId;
-            // Refresh experience to get updated slide data
+            // Refresh experience to get updated slide data — preserve scroll position
             closeSlideDetail();
-            await openExperience(currentExperience.id);
+            await openExperience(currentExperience.id, { scrollToSlide: createdSlideId });
 
             // Poll for silhouette generation to complete, then refresh image
             if (createdSlideId) {
@@ -3086,7 +3303,7 @@
                         const status = await statusRes.json();
                         if (status.status === 'done' || status.status === 'error') {
                             clearInterval(pollSilhouette);
-                            await openExperience(currentExperience.id);
+                            await openExperience(currentExperience.id, { scrollToSlide: createdSlideId });
                         }
                     } catch { clearInterval(pollSilhouette); }
                 }, 2000);
@@ -3097,6 +3314,38 @@
             alert(err.message);
             btn.textContent = origText;
             btn.disabled = false;
+        }
+    }
+
+    // ═══ AI Engine toggle ═══
+    function setEngine(engine) {
+        const localBtn = document.getElementById('sdp-engine-local-btn');
+        const geminiBtn = document.getElementById('sdp-engine-gemini-btn');
+        const hiddenGen = document.getElementById('sdp-use-gemini-top');
+        const hiddenAnalyze = document.getElementById('sdp-use-gemini-analyze');
+        if (engine === 'gemini') {
+            localBtn.style.background = 'transparent'; localBtn.style.color = 'var(--text-muted)';
+            geminiBtn.style.background = '#1a3a5c'; geminiBtn.style.color = '#12ABDB';
+            hiddenGen.value = 'true';
+            hiddenAnalyze.value = 'true';
+        } else {
+            localBtn.style.background = '#1e5631'; localBtn.style.color = '#34d399';
+            geminiBtn.style.background = 'transparent'; geminiBtn.style.color = 'var(--text-muted)';
+            hiddenGen.value = 'false';
+            hiddenAnalyze.value = 'false';
+        }
+    }
+
+    function toggle4thAnswer() {
+        const cb = document.getElementById('sdp-d-enabled');
+        const row = document.getElementById('sdp-row-d');
+        const input = document.getElementById('sdp-ans-d');
+        if (cb.checked) {
+            row.style.display = 'flex';
+            row.style.opacity = '1';
+        } else {
+            row.style.display = 'none';
+            input.value = '';
         }
     }
 
@@ -3117,6 +3366,39 @@
             if (res.ok) {
                 closeSlideDetail();
                 await openExperience(currentExperience.id);
+            }
+        });
+    }
+
+    async function removeMediaFromShow() {
+        if (!activeSlideId || !currentExperience) return;
+        quickRemoveSlide(activeSlideId);
+    }
+
+    async function quickRemoveSlide(slideId, name) {
+        if (!currentExperience) return;
+        if (!name) {
+            const slide = currentExperience.slides.find(s => s.id === slideId);
+            name = slide?.media_filename || 'this media';
+        }
+        showConfirmDialog(`Remove "${name}" from this show?`, async () => {
+            const res = await fetch(`/api/slides/${slideId}`, { method: 'DELETE' });
+            if (res.ok) {
+                // Animate removal
+                const el = document.querySelector(`.sg-item[data-slide-id="${slideId}"]`);
+                if (el) {
+                    el.style.transition = 'opacity 0.25s, transform 0.25s';
+                    el.style.opacity = '0';
+                    el.style.transform = 'scale(0.8)';
+                }
+                if (activeSlideId === slideId) closeSlideDetail();
+                // Refresh after animation
+                setTimeout(async () => {
+                    await openExperience(currentExperience.id);
+                }, 280);
+                toast(`Removed ${name}`);
+            } else {
+                toast('Failed to remove');
             }
         });
     }
@@ -3161,14 +3443,69 @@
         }
     }
 
-    async function regenerateSilhouette() {
-        if (!activeSlideId) return;
-        // Remove quiz and re-open detail so admin can pick person again
-        showConfirmDialog('This will remove the current quiz image. You can then re-create it with Shadow/Missing.', async () => {
-            await fetch(`/api/slides/${activeSlideId}/remove-quiz`, { method: 'POST' });
-            await openExperience(currentExperience.id);
-            openSlideDetail(activeSlideId);
-        });
+    async function regenerateWithEngine(engine) {
+        if (!activeSlideId || !currentExperience) return;
+        const slide = currentExperience.slides.find(s => s.id === activeSlideId);
+        if (!slide) return;
+
+        const useGemini = engine === 'gemini';
+        const label = useGemini ? 'AI (Gemini)' : 'Local (rembg)';
+        const statusEl = document.getElementById('sdp-regen-status');
+
+        // Find the correct answer text to use as person description
+        const correctKey = slide.correct_answer;
+        const correctText = slide[`answer_${correctKey}`] || '';
+
+        statusEl.style.display = '';
+        statusEl.textContent = `Regenerating with ${label}...`;
+        statusEl.style.color = 'var(--accent-light-blue)';
+
+        try {
+            const res = await fetch(`/api/slides/${activeSlideId}/regenerate`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    use_gemini: useGemini,
+                    person_to_remove: correctText,
+                    person_index: 0,
+                })
+            });
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({}));
+                throw new Error(err.detail || 'Regeneration failed');
+            }
+
+            // Show spinner on the silhouette image
+            const silImg = document.getElementById('sdp-silhouette-img');
+            const silGen = document.getElementById('sdp-silhouette-generating');
+            if (silImg) silImg.style.display = 'none';
+            if (silGen) { silGen.style.display = 'flex'; document.getElementById('sdp-gen-status').textContent = `Regenerating (${label})...`; }
+
+            // Poll for completion
+            const pollId = setInterval(async () => {
+                try {
+                    const sr = await fetch(`/api/slides/${activeSlideId}/silhouette-status`);
+                    const status = await sr.json();
+                    if (status.status === 'done') {
+                        clearInterval(pollId);
+                        statusEl.textContent = `Done! Image regenerated with ${label}.`;
+                        statusEl.style.color = '#4caf50';
+                        await openExperience(currentExperience.id);
+                        openSlideDetail(activeSlideId);
+                    } else if (status.status === 'error') {
+                        clearInterval(pollId);
+                        statusEl.textContent = `Error: ${status.warning || 'Generation failed'}`;
+                        statusEl.style.color = '#ef4444';
+                        if (silGen) silGen.style.display = 'none';
+                        if (silImg) silImg.style.display = '';
+                    }
+                } catch { clearInterval(pollId); }
+            }, 2000);
+            setTimeout(() => clearInterval(pollId), 60000);
+        } catch (err) {
+            statusEl.textContent = `Error: ${err.message}`;
+            statusEl.style.color = '#ef4444';
+        }
     }
 
     function renderSlideThumb(slide, index) {
@@ -3474,9 +3811,18 @@
         });
         socket.on('frame_timer', (data) => startFrameTimer(data.duration, data.deadline));
         socket.on('timer_start', (data) => startFrameTimer(data.duration, data.deadline));
-        socket.on('live_stats', (data) => updateLiveStats(data));
+        socket.on('live_stats', (data) => { lastLiveStats = data; updateLiveStats(data); });
+        socket.on('show_live_answers', (data) => {
+            liveAnswersOn = data.show;
+            updateOverlayButtons();
+        });
+        socket.on('show_correct_answer', (data) => {
+            correctAnswerOn = data.show;
+            updateOverlayButtons();
+            if (lastLiveStats) updateLiveStats(lastLiveStats);
+        });
         socket.on('reveal', (data) => {
-            if (data.stats) updateLiveStats(data.stats);
+            if (data.stats) { lastLiveStats = data.stats; updateLiveStats(data.stats); }
             document.getElementById('btn-main-label').textContent = t('admin.next') || 'Next';
             currentGameSlide = null;
         });
@@ -3647,31 +3993,86 @@
         if (slide.slide_type === 'game' && slide.silhouette_url) {
             preview.innerHTML = `<img src="${slide.silhouette_url}" alt="Who is this?">`;
             stats.style.display = '';
+            document.getElementById('gp-overlay-toggles').style.display = '';
             document.getElementById('gp-answered-count').textContent = '0 / 0';
             document.getElementById('gp-stat-bars').innerHTML = '';
+            lastLiveStats = null;
+            liveAnswersOn = false;
+            correctAnswerOn = false;
+            updateOverlayButtons();
             document.getElementById('btn-main-label').textContent = t('admin.reveal') || 'Show Answer';
         } else if (slide.media_type === 'video') {
             preview.innerHTML = `<video src="${slide.media_url}" muted playsinline style="max-width:100%; max-height:100%; border-radius:8px;"></video>`;
             stats.style.display = 'none';
+            document.getElementById('gp-overlay-toggles').style.display = 'none';
             document.getElementById('btn-main-label').textContent = t('admin.next') || 'Next';
         } else {
             preview.innerHTML = `<img src="${slide.media_url}" alt="">`;
             stats.style.display = 'none';
+            document.getElementById('gp-overlay-toggles').style.display = 'none';
             document.getElementById('btn-main-label').textContent = t('admin.next') || 'Next';
+        }
+    }
+
+    let liveAnswersOn = false;
+    let correctAnswerOn = false;
+
+    function toggleLiveAnswers() {
+        socket?.emit('toggle_live_answers', {code: currentRoomCode});
+    }
+    function toggleCorrectAnswer() {
+        socket?.emit('toggle_correct_answer', {code: currentRoomCode});
+    }
+
+    function updateOverlayButtons() {
+        const btnA = document.getElementById('btn-live-answers');
+        const btnC = document.getElementById('btn-correct-answer');
+        if (btnA) {
+            btnA.className = liveAnswersOn
+                ? 'big-btn big-btn-primary'
+                : 'big-btn big-btn-secondary';
+        }
+        if (btnC) {
+            btnC.className = correctAnswerOn
+                ? 'big-btn big-btn-primary'
+                : 'big-btn big-btn-secondary';
         }
     }
 
     function updateLiveStats(data) {
         document.getElementById('gp-answered-count').textContent = `${data.answered} / ${data.total}`;
         const bars = document.getElementById('gp-stat-bars');
-        const total = Math.max(data.total, 1);
-        bars.innerHTML = ['a','b','c','d'].map(l => {
+        const answered = data.answered || 0;
+        const correctKey = correctAnswerOn && currentGameSlide ? currentGameSlide.correct_answer : null;
+        const answerTexts = currentGameSlide ? {
+            a: currentGameSlide.answer_a, b: currentGameSlide.answer_b,
+            c: currentGameSlide.answer_c, d: currentGameSlide.answer_d,
+        } : {};
+        const players = data.answer_players || {};
+
+        bars.innerHTML = ['a','b','c','d'].filter(l => answerTexts[l]).map(l => {
             const count = data.answer_counts?.[l] || 0;
-            return `<div class="stat-bar"><span class="bar-label ${l}">${l.toUpperCase()}</span>
-                <div class="bar-track"><div class="bar-fill ${l}" style="width:${(count/total)*100}%">${count||''}</div></div>
-                <span class="bar-count">${count}</span></div>`;
+            const pct = answered > 0 ? Math.round((count / answered) * 100) : 0;
+            const isCorrect = correctKey === l;
+            const isWrong = correctKey && correctKey !== l;
+            const borderStyle = isCorrect ? 'border-left:3px solid #10b981;' : isWrong ? 'border-left:3px solid #ef4444; opacity:0.5;' : '';
+            const names = (players[l] || []).join(', ');
+            return `<div class="stat-bar-group" style="${borderStyle} padding-left:${correctKey ? '6px' : '0'}; margin-bottom:8px; transition:opacity 0.2s;">
+                <div style="display:flex; align-items:center; gap:6px;">
+                    <span class="bar-label ${l}">${l.toUpperCase()}</span>
+                    <div class="bar-track">
+                        <div class="bar-fill ${l}" style="width:${answered > 0 ? (count/answered)*100 : 0}%">
+                            ${count > 0 ? `<span style="padding-left:6px; font-size:11px;">${pct}%</span>` : ''}
+                        </div>
+                    </div>
+                    <span class="bar-count" style="min-width:20px; text-align:right; font-size:12px; font-weight:700; color:var(--text-muted);">${count}</span>
+                </div>
+                <div style="font-size:10px; color:var(--text-muted); margin-top:2px; margin-left:34px; line-height:1.4; max-height:36px; overflow-y:auto; word-break:break-word;">${names ? escapeHtml(names) : '<span style="opacity:0.3;">—</span>'}</div>
+            </div>`;
         }).join('');
     }
+    // Store last live stats for re-rendering when correct answer toggles
+    let lastLiveStats = null;
 
     // ═══ Simplified Game Controls ═══
     function gamePrev() { socket?.emit('admin_prev', {code: currentRoomCode}); }
@@ -3810,6 +4211,8 @@
             case 'ArrowRight': gameRevealOrNext(); e.preventDefault(); break;
             case ' ': gamePause(); e.preventDefault(); break;
             case 'r': case 'R': gameToggleLeaderboard(); e.preventDefault(); break;
+            case 'a': case 'A': toggleLiveAnswers(); e.preventDefault(); break;
+            case 'c': case 'C': toggleCorrectAnswer(); e.preventDefault(); break;
         }
     });
 

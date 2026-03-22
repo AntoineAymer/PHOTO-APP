@@ -42,7 +42,7 @@
   --fs-lg: 16px;
   --fs-xl: 22px;
   --fs-display: 32px; /* For display screen text — accessibility minimum */
-  --fs-player-button: 18px; /* Large for phone touch targets */
+  --fs-player-button: 22px; /* Large for phone touch targets — accessibility */
 
   --fw-normal: 400;
   --fw-medium: 500;
@@ -81,7 +81,7 @@
   /* === Layout === */
   --sidebar-width: 250px;
   --header-height: 56px;
-  --player-button-height: 60px;
+  --player-button-height: 80px;
   --touch-target-min: 48px;
 
   /* === Answer button colors (Crowdpurr-style, high contrast) === */
