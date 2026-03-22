@@ -298,11 +298,10 @@
     /* Three big game buttons */
     .game-controls-simple {
         display: flex;
-        gap: 16px;
+        gap: 6px;
         width: 100%;
-        max-width: 600px;
     }
-    .game-controls-simple .big-btn { flex: 1; min-height: 52px; font-size: 16px; }
+    .game-controls-simple .big-btn { flex: 1 1 0; min-height: 48px; font-size: 13px; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 8px 10px; }
     .game-slide-info {
         font-size: 16px;
         color: var(--text-muted);
@@ -3466,18 +3465,26 @@
             document.getElementById('game-lobby-section').style.display = 'none';
             document.getElementById('game-controls-section').style.display = '';
             updateCurrentSlide(data.slide);
+            if (data.timer) startFrameTimer(data.timer.duration, data.timer.deadline);
         });
-        socket.on('slide_changed', (data) => updateCurrentSlide(data.slide));
-        socket.on('frame_timer', (data) => { console.log('[ADMIN] frame_timer received', data); startFrameTimer(data.duration, data.deadline); });
-        socket.on('timer_start', (data) => { console.log('[ADMIN] timer_start received', data); startFrameTimer(data.duration, data.deadline); });
+        socket.on('slide_changed', (data) => {
+            updateCurrentSlide(data.slide);
+            if (data.timer) startFrameTimer(data.timer.duration, data.timer.deadline);
+            else stopFrameTimer();
+        });
+        socket.on('frame_timer', (data) => startFrameTimer(data.duration, data.deadline));
+        socket.on('timer_start', (data) => startFrameTimer(data.duration, data.deadline));
         socket.on('live_stats', (data) => updateLiveStats(data));
         socket.on('reveal', (data) => {
             if (data.stats) updateLiveStats(data.stats);
             document.getElementById('btn-main-label').textContent = t('admin.next') || 'Next';
             currentGameSlide = null;
         });
-        socket.on('paused', () => { isPaused = true; });
-        socket.on('resumed', () => { isPaused = false; });
+        socket.on('paused', () => { isPaused = true; stopFrameTimer(); });
+        socket.on('resumed', (data) => {
+            isPaused = false;
+            if (data && data.timer) startFrameTimer(data.timer.duration, data.timer.deadline);
+        });
         socket.on('game_finished', (data) => {
             toast(t('admin.show_finished') || 'Show finished!');
             stopFrameTimer();

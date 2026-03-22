@@ -1119,7 +1119,7 @@ async def get_experience(exp_id: int, db=Depends(get_db)):
         "sound_enabled": exp.sound_enabled,
         "player_display_mode": exp.player_display_mode or "question_and_choices",
         "speed_scoring": exp.speed_scoring if exp.speed_scoring is not None else True,
-        "max_points": exp.max_points or 100,
+        "max_points": exp.max_points if exp.max_points is not None else 100,
         "min_points": exp.min_points if exp.min_points is not None else 10,
         "wrong_points": exp.wrong_points or 0,
         "slides": [{
@@ -1729,7 +1729,7 @@ async def _restore_room(session, db_room):
             "quiz_intro_duration": exp.quiz_intro_duration if exp.quiz_intro_duration is not None else 3,
             "player_display_mode": exp.player_display_mode or "question_and_choices",
             "speed_scoring": exp.speed_scoring if exp.speed_scoring is not None else True,
-            "max_points": exp.max_points or 100,
+            "max_points": exp.max_points if exp.max_points is not None else 100,
             "min_points": exp.min_points if exp.min_points is not None else 10,
             "wrong_points": exp.wrong_points or 0,
         },
@@ -1992,7 +1992,7 @@ async def create_room(request: Request, db=Depends(get_db)):
             "quiz_intro_duration": exp.quiz_intro_duration if exp.quiz_intro_duration is not None else 3,
             "player_display_mode": exp.player_display_mode or "question_and_choices",
             "speed_scoring": exp.speed_scoring if exp.speed_scoring is not None else True,
-            "max_points": exp.max_points or 100,
+            "max_points": exp.max_points if exp.max_points is not None else 100,
             "min_points": exp.min_points if exp.min_points is not None else 10,
             "wrong_points": exp.wrong_points or 0,
         },
@@ -2249,26 +2249,36 @@ async def start_experience(sid, data):
     slide = get_current_slide_data(code)
     admin_slide = get_current_slide_admin(code)
 
+    # Include timer data in game_started for frame slides
+    timer_data = None
+    if slide and slide["slide_type"] == "frame":
+        duration = slide.get("display_duration") or room["experience"].get("default_image_duration", 8)
+        import time as _time
+        deadline = int((_time.time() + duration) * 1000)
+        timer_data = {"duration": duration, "deadline": deadline}
+
     await sio.emit("game_started", {
         "slide": slide,
         "experience": room["experience"],
+        "timer": timer_data,
     }, room=f"display_{code}")
 
     await sio.emit("game_started", {
         "slide": admin_slide,
         "experience": room["experience"],
+        "timer": timer_data,
     }, room=f"admin_{code}")
 
     player_slide = get_current_slide_player(code)
     await sio.emit("game_started", {
         "slide": player_slide,
+        "experience": room["experience"],
     }, room=f"player_{code}")
 
     if slide and slide["slide_type"] == "game":
         await start_question_timer(code)
-    elif slide and slide["slide_type"] == "frame":
-        duration = slide.get("display_duration") or room["experience"].get("default_image_duration", 8)
-        await start_frame_timer(code, duration)
+    elif timer_data:
+        await start_frame_timer(code, timer_data["duration"])
 
 async def start_question_timer(code):
     room = active_rooms.get(code)
@@ -2293,11 +2303,16 @@ async def start_question_timer(code):
 
     # Auto-reveal when timer expires
     async def timer_expired():
-        await asyncio.sleep(timer_duration)
-        if active_rooms.get(code) and room["state"] == "playing":
-            current_slide = room["slides"][room["current_slide_index"]]
-            if current_slide["slide_type"] == "game":
-                await do_reveal(code)
+        try:
+            await asyncio.sleep(timer_duration)
+            if active_rooms.get(code) and room["state"] == "playing":
+                current_slide = room["slides"][room["current_slide_index"]]
+                if current_slide["slide_type"] == "game":
+                    # Clear ourselves BEFORE do_reveal so it doesn't cancel us
+                    room["timer_task"] = None
+                    await do_reveal(code)
+        except asyncio.CancelledError:
+            pass
 
     if room.get("timer_task"):
         room["timer_task"].cancel()
@@ -2379,56 +2394,71 @@ async def advance_slide(code, direction):
             await sio.emit("player_list", get_player_list(code), room=f"admin_{code}")
 
             async def _after_intro():
-                await asyncio.sleep(intro_dur)
-                if active_rooms.get(code) is not room:
-                    return
-                if room["current_slide_index"] != new_idx:
-                    return
-                room.pop("intro_start_time", None)
-                await sio.emit("slide_changed", {"slide": slide}, room=f"display_{code}")
-                await sio.emit("slide_changed", {"slide": player_slide}, room=f"player_{code}")
-                await start_question_timer(code)
+                try:
+                    await asyncio.sleep(intro_dur)
+                    if active_rooms.get(code) is not room:
+                        return
+                    if room["current_slide_index"] != new_idx:
+                        return
+                    # Clear ourselves BEFORE calling start_question_timer so it doesn't cancel us
+                    room["timer_task"] = None
+                    room.pop("intro_start_time", None)
+                    await sio.emit("slide_changed", {"slide": slide}, room=f"display_{code}")
+                    await sio.emit("slide_changed", {"slide": player_slide}, room=f"player_{code}")
+                    await start_question_timer(code)
+                except asyncio.CancelledError:
+                    pass
 
             room["timer_task"] = asyncio.create_task(_after_intro())
             return
 
-    await sio.emit("slide_changed", {"slide": slide}, room=f"display_{code}")
-    await sio.emit("slide_changed", {"slide": admin_slide}, room=f"admin_{code}")
+    timer_data = None
+    if slide and slide["slide_type"] == "frame":
+        duration = slide.get("display_duration") or room.get("experience", {}).get("default_image_duration", 8)
+        import time as _time
+        deadline = int((_time.time() + duration) * 1000)
+        timer_data = {"duration": duration, "deadline": deadline}
+
+    await sio.emit("slide_changed", {"slide": slide, "timer": timer_data}, room=f"display_{code}")
+    await sio.emit("slide_changed", {"slide": admin_slide, "timer": timer_data}, room=f"admin_{code}")
     await sio.emit("slide_changed", {"slide": player_slide}, room=f"player_{code}")
     await sio.emit("player_list", get_player_list(code), room=f"admin_{code}")
 
-    if slide and slide["slide_type"] == "frame":
-        duration = slide.get("display_duration") or room.get("experience", {}).get("default_image_duration", 8)
-        await start_frame_timer(code, duration)
+    if timer_data:
+        await start_frame_timer(code, timer_data["duration"])
 
 async def start_frame_timer(code, duration):
-    """Auto-advance frame slide after duration seconds. Send timer to admin."""
+    """Auto-advance frame slide after duration seconds."""
     room = active_rooms.get(code)
     if not room:
-        print(f"[TIMER] start_frame_timer: room {code} not found")
         return
-    import time as _time
-    deadline = int((_time.time() + duration) * 1000)
     idx = room["current_slide_index"]
-    print(f"[TIMER] start_frame_timer code={code} slide={idx} duration={duration}s")
-    await sio.emit("frame_timer", {"duration": duration, "deadline": deadline}, room=f"admin_{code}")
-    await sio.emit("frame_timer", {"duration": duration, "deadline": deadline}, room=f"display_{code}")
+    room["frame_timer_start"] = time.time()
+    room["frame_timer_duration"] = duration
+    print(f"[TIMER] start_frame_timer code={code} slide={idx} duration={duration}s", flush=True)
 
     saved_idx = idx
     async def auto_advance():
-        await asyncio.sleep(duration)
-        r = active_rooms.get(code)
-        if r is not room:
-            print(f"[TIMER] auto_advance: room replaced, skipping")
-            return
-        if room["state"] != "playing":
-            print(f"[TIMER] auto_advance: state={room['state']}, skipping")
-            return
-        if room["current_slide_index"] != saved_idx:
-            print(f"[TIMER] auto_advance: slide changed ({room['current_slide_index']} != {saved_idx}), skipping")
-            return
-        print(f"[TIMER] auto_advance: advancing from slide {saved_idx}")
-        await advance_slide(code, 1)
+        try:
+            await asyncio.sleep(duration)
+            r = active_rooms.get(code)
+            if r is not room:
+                return
+            if room["state"] != "playing":
+                return
+            if room["current_slide_index"] != saved_idx:
+                return
+            # Clear ourselves BEFORE calling advance_slide, so it doesn't cancel us
+            room["timer_task"] = None
+            room.pop("frame_timer_start", None)
+            room.pop("frame_timer_duration", None)
+            print(f"[TIMER] auto_advance: slide {saved_idx} -> {saved_idx + 1}", flush=True)
+            await advance_slide(code, 1)
+        except asyncio.CancelledError:
+            pass
+        except Exception as e:
+            print(f"[TIMER] auto_advance ERROR: {e}", flush=True)
+            import traceback; traceback.print_exc()
 
     room["timer_task"] = asyncio.create_task(auto_advance())
 
@@ -2518,6 +2548,37 @@ async def do_reveal(code):
             "your_total_score": player["score"],
         }, to=psid)
 
+    # Auto-advance after reveal: show answer for 8s, then optionally leaderboard, then next slide
+    reveal_duration = room["experience"].get("default_image_duration", 8)
+    reveal_idx = room["current_slide_index"]
+    async def after_reveal():
+        try:
+            await asyncio.sleep(reveal_duration)
+            if active_rooms.get(code) is not room:
+                return
+            if room["current_slide_index"] != reveal_idx:
+                return
+            if room["state"] != "revealing":
+                return
+            # Show leaderboard between questions if enabled
+            if room["experience"].get("show_leaderboard_between"):
+                lb_duration = room["experience"].get("leaderboard_duration", 8)
+                leaderboard = get_leaderboard(code)
+                await sio.emit("leaderboard", {"leaderboard": leaderboard, "duration": lb_duration}, room=f"display_{code}")
+                await sio.emit("leaderboard", {"leaderboard": leaderboard}, room=f"admin_{code}")
+                await sio.emit("leaderboard", {"leaderboard": leaderboard}, room=f"player_{code}")
+                await asyncio.sleep(lb_duration)
+                if active_rooms.get(code) is not room or room["current_slide_index"] != reveal_idx:
+                    return
+            # Advance to next slide
+            room["timer_task"] = None
+            room["state"] = "playing"
+            print(f"[TIMER] after_reveal: auto-advancing from slide {reveal_idx}", flush=True)
+            await advance_slide(code, 1)
+        except asyncio.CancelledError:
+            pass
+    room["timer_task"] = asyncio.create_task(after_reveal())
+
 @sio.event
 async def admin_pause(sid, data):
     if not is_admin(sid): return
@@ -2542,6 +2603,11 @@ async def admin_pause(sid, data):
             slide = room["slides"][idx]
             timer_duration = slide.get("question_timer") or room["experience"]["default_question_timer"]
             room["paused_remaining"] = max(0, timer_duration - elapsed)
+    elif room.get("frame_timer_start"):
+        # Paused during frame slide auto-advance
+        elapsed = time.time() - room["frame_timer_start"]
+        frame_dur = room.get("frame_timer_duration", 8)
+        room["paused_frame_remaining"] = max(0, frame_dur - elapsed)
     await sio.emit("paused", {}, room=f"display_{code}")
     await sio.emit("paused", {}, room=f"player_{code}")
     await sio.emit("paused", {}, room=f"admin_{code}")
@@ -2563,15 +2629,19 @@ async def admin_resume(sid, data):
         room["intro_start_time"] = time.time()
 
         async def _resume_intro():
-            await asyncio.sleep(intro_remaining)
-            if active_rooms.get(code) is not room or room["state"] != "playing":
-                return
-            if room["current_slide_index"] != idx:
-                return
-            room.pop("intro_start_time", None)
-            await sio.emit("slide_changed", {"slide": slide}, room=f"display_{code}")
-            await sio.emit("slide_changed", {"slide": player_slide}, room=f"player_{code}")
-            await start_question_timer(code)
+            try:
+                await asyncio.sleep(intro_remaining)
+                if active_rooms.get(code) is not room or room["state"] != "playing":
+                    return
+                if room["current_slide_index"] != idx:
+                    return
+                room["timer_task"] = None
+                room.pop("intro_start_time", None)
+                await sio.emit("slide_changed", {"slide": slide}, room=f"display_{code}")
+                await sio.emit("slide_changed", {"slide": player_slide}, room=f"player_{code}")
+                await start_question_timer(code)
+            except asyncio.CancelledError:
+                pass
 
         if room.get("timer_task"):
             room["timer_task"].cancel()
@@ -2593,15 +2663,32 @@ async def admin_resume(sid, data):
             await sio.emit("timer_start", tp, room=f"admin_{code}")
 
             async def timer_expired():
-                await asyncio.sleep(remaining)
-                if active_rooms.get(code) and room["state"] == "playing":
-                    current_slide = room["slides"][room["current_slide_index"]]
-                    if current_slide["slide_type"] == "game":
-                        await do_reveal(code)
+                try:
+                    await asyncio.sleep(remaining)
+                    if active_rooms.get(code) and room["state"] == "playing":
+                        current_slide = room["slides"][room["current_slide_index"]]
+                        if current_slide["slide_type"] == "game":
+                            room["timer_task"] = None
+                            await do_reveal(code)
+                except asyncio.CancelledError:
+                    pass
 
             if room.get("timer_task"):
                 room["timer_task"].cancel()
             room["timer_task"] = asyncio.create_task(timer_expired())
+
+    # Restart frame timer if paused during a frame slide
+    frame_remaining = room.pop("paused_frame_remaining", None)
+    if frame_remaining and frame_remaining > 0:
+        import time as _time
+        deadline = int((_time.time() + frame_remaining) * 1000)
+        timer_data = {"duration": frame_remaining, "deadline": deadline}
+        await sio.emit("resumed", {"timer": timer_data}, room=f"display_{code}")
+        await sio.emit("resumed", {"timer": timer_data}, room=f"player_{code}")
+        await sio.emit("resumed", {"timer": timer_data}, room=f"admin_{code}")
+        await start_frame_timer(code, frame_remaining)
+        return
+
     await sio.emit("resumed", {}, room=f"display_{code}")
     await sio.emit("resumed", {}, room=f"player_{code}")
     await sio.emit("resumed", {}, room=f"admin_{code}")
@@ -2683,11 +2770,15 @@ async def dismiss_leaderboard(sid, data):
             await sio.emit("timer_start", tp, room=f"admin_{code}")
 
             async def timer_expired():
-                await asyncio.sleep(remaining)
-                if active_rooms.get(code) and room["state"] == "playing":
-                    current_slide = room["slides"][room["current_slide_index"]]
-                    if current_slide["slide_type"] == "game":
-                        await do_reveal(code)
+                try:
+                    await asyncio.sleep(remaining)
+                    if active_rooms.get(code) and room["state"] == "playing":
+                        current_slide = room["slides"][room["current_slide_index"]]
+                        if current_slide["slide_type"] == "game":
+                            room["timer_task"] = None
+                            await do_reveal(code)
+                except asyncio.CancelledError:
+                    pass
 
             room["timer_task"] = asyncio.create_task(timer_expired())
     await sio.emit("dismissed_leaderboard", {}, room=f"admin_{code}")
@@ -3048,7 +3139,13 @@ async def submit_answer(sid, data):
         else:
             points = max_pts
     else:
-        points = wrong_pts
+        # Wrong answer: if speed scoring + wrong_points is negative, scale penalty with speed
+        if use_speed and wrong_pts < 0:
+            # Fast wrong = more penalty, slow wrong = less penalty
+            penalty = max(wrong_pts, int(wrong_pts * (1.0 - speed_ratio)))
+            points = penalty
+        else:
+            points = wrong_pts
     print(f"  [SCORE] => points={points} (max={max_pts}, min={min_pts}, speed_ratio={speed_ratio:.2f}, relaxed={exp.get('relaxed_mode')})")
 
     room["answers"][slide_id][player["id"]] = {

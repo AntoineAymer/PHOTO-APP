@@ -434,7 +434,10 @@
                 <div class="timer-bar">
                     <div class="timer-bar-fill" id="timer-fill" style="width: 100%"></div>
                 </div>
-                <div class="timer-text" id="timer-text"></div>
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <div class="timer-text" id="timer-text"></div>
+                    <div class="timer-points" id="timer-points" style="font-size:var(--fs-sm); font-weight:700; color:#fbbf24;"></div>
+                </div>
             </div>
         </div>
         <div class="game-instruction-bar" id="game-instruction" data-t="player.answer_now">
@@ -563,6 +566,7 @@
     let previousScreen = null;
     let questionNumber = 0;
     let isRevealed = false;
+    let currentExperience = null;
 
     // Shapes paired with each answer color (accessibility: never color alone)
     const CARD_SHAPES = {
@@ -677,6 +681,7 @@
             sfxGameStart();
             questionNumber = 0;
             currentSlide = data.slide;
+            if (data.experience) currentExperience = data.experience;
             if (data.slide && data.slide.slide_type === 'game') {
                 showGameScreen(data.slide);
             } else {
@@ -946,6 +951,12 @@
         const endTime = deadline || (Date.now() + duration * 1000);
         const fill = document.getElementById('timer-fill');
         const text = document.getElementById('timer-text');
+        const pointsEl = document.getElementById('timer-points');
+
+        // Speed scoring params from experience
+        const maxPts = (currentExperience && currentExperience.max_points) || 100;
+        const minPts = (currentExperience && currentExperience.min_points) || 10;
+        const useSpeed = currentExperience ? currentExperience.speed_scoring !== false : true;
 
         timerInterval = setInterval(() => {
             const remaining = Math.max(0, (endTime - Date.now()) / 1000);
@@ -955,17 +966,34 @@
             fill.className = 'timer-bar-fill' + (pct < 25 ? ' danger' : pct < 50 ? ' warning' : '');
             text.textContent = `${Math.ceil(remaining)}s`;
 
+            // Live points countdown
+            if (pointsEl && useSpeed && duration > 0 && !hasAnswered) {
+                const speedRatio = Math.min(1, (duration - remaining) / duration);
+                const pts = Math.max(minPts, Math.round(maxPts - (maxPts - minPts) * speedRatio));
+                pointsEl.textContent = `${pts} pts`;
+                pointsEl.style.display = '';
+            } else if (pointsEl && hasAnswered) {
+                // Keep last shown value but dim it
+                pointsEl.style.opacity = '0.5';
+            }
+
             if (remaining <= 5 && remaining > 0) {
                 const secNow = Math.ceil(remaining);
                 const secPrev = Math.ceil(remaining + 0.1);
                 if (secNow < secPrev) sfxTimerLow();
             }
-            if (remaining <= 0) { stopTimer(); text.textContent = "0s"; }
+            if (remaining <= 0) {
+                stopTimer();
+                text.textContent = "0s";
+                if (pointsEl) { pointsEl.textContent = `${minPts} pts`; pointsEl.style.opacity = '0.5'; }
+            }
         }, 100);
     }
 
     function stopTimer() {
         if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
+        const pointsEl = document.getElementById('timer-points');
+        if (pointsEl) { pointsEl.style.display = 'none'; pointsEl.style.opacity = '1'; }
     }
 
     // Reveal
