@@ -4168,6 +4168,9 @@
             if (data.players) updatePlayerInfo(data.players);
             toast(`${data.nickname} ${t('admin.reclaimed') || 'reclaimed'}`);
         });
+        socket.on('slides_reloaded', (data) => {
+            toast(`Slides reloaded: ${data.slide_count} items, ${data.quiz_count} quiz`);
+        });
         socket.on('resumed_break', () => {
             isIntermission = false;
             const btn = document.getElementById('btn-intermission');
@@ -4443,10 +4446,19 @@
             bar.id = 'back-to-game-bar';
             bar.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:8000;background:linear-gradient(90deg,#0070AD,#12ABDB);padding:8px 20px;display:flex;align-items:center;justify-content:space-between;box-shadow:0 2px 12px rgba(0,0,0,0.4);';
             bar.innerHTML = `<span style="color:#fff;font-weight:700;font-size:14px;">Game paused — editing quizzes</span>
-                <button onclick="returnToGame()" style="background:#fff;color:#0070AD;border:none;padding:8px 20px;border-radius:6px;font-weight:700;font-size:13px;cursor:pointer;">Back to Game</button>`;
+                <div style="display:flex;gap:8px;">
+                    <button onclick="reloadSlidesInGame()" style="background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.3);padding:8px 16px;border-radius:6px;font-weight:600;font-size:13px;cursor:pointer;">&#x21bb; Apply Changes</button>
+                    <button onclick="returnToGame()" style="background:#fff;color:#0070AD;border:none;padding:8px 20px;border-radius:6px;font-weight:700;font-size:13px;cursor:pointer;">Back to Game</button>
+                </div>`;
             document.body.appendChild(bar);
         }
         bar.style.display = 'flex';
+    }
+
+    function reloadSlidesInGame() {
+        if (!currentRoomCode) return;
+        socket?.emit('admin_reload_slides', { code: currentRoomCode });
+        toast('Reloading slides...');
     }
 
     function returnToGame() {

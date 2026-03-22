@@ -3011,6 +3011,56 @@ async def toggle_phone_timer(sid, data):
     await sio.emit("phone_timer_toggle", {"visible": visible}, room=f"player_{code}")
 
 @sio.event
+async def admin_reload_slides(sid, data):
+    """Reload slides from DB without interrupting scores or players."""
+    if not is_admin(sid): return
+    code = data.get("code")
+    room = active_rooms.get(code)
+    if not room: return
+    exp_id = room["experience_id"]
+    async with SessionLocal() as db:
+        exp = await db.get(Experience, exp_id)
+        if not exp: return
+        result = await db.execute(
+            select(Slide).where(Slide.experience_id == exp_id)
+            .options(selectinload(Slide.media))
+            .order_by(Slide.position)
+        )
+        slides = result.scalars().all()
+        new_slides = [{
+            "id": s.id, "position": s.position, "slide_type": s.slide_type.value, "quiz_type": s.quiz_type,
+            "media_id": s.media_id,
+            "media_url": f"/api/media/{s.media_id}/file",
+            "media_type": s.media.media_type.value if s.media else "image",
+            "display_duration": s.display_duration or exp.default_image_duration,
+            "silhouette_url": f"/api/slides/{s.id}/silhouette" if s.silhouette_path else None,
+            "question_timer": s.question_timer or exp.default_question_timer,
+            "answer_a": s.answer_a, "answer_b": s.answer_b,
+            "answer_c": s.answer_c, "answer_d": s.answer_d,
+            "correct_answer": s.correct_answer,
+        } for s in slides]
+        # Update experience settings too
+        room["experience"].update({
+            "default_image_duration": exp.default_image_duration,
+            "default_question_timer": exp.default_question_timer,
+            "speed_scoring": exp.speed_scoring if exp.speed_scoring is not None else True,
+            "max_points": exp.max_points if exp.max_points is not None else 10,
+            "min_points": exp.min_points if exp.min_points is not None else 0,
+            "wrong_points": exp.wrong_points if exp.wrong_points is not None else -10,
+        })
+    old_count = len(room["slides"])
+    room["slides"] = new_slides
+    # Clamp current index if slides were removed
+    if room["current_slide_index"] >= len(new_slides):
+        room["current_slide_index"] = max(0, len(new_slides) - 1)
+    print(f"[RELOAD] Slides reloaded for {code}: {old_count} -> {len(new_slides)}", flush=True)
+    await sio.emit("slides_reloaded", {
+        "slide_count": len(new_slides),
+        "quiz_count": sum(1 for s in new_slides if s["slide_type"] == "game"),
+    }, room=f"admin_{code}")
+
+
+@sio.event
 async def admin_break(sid, data):
     """Start an intermission — persistent break state with player reclaim."""
     if not is_admin(sid): return
