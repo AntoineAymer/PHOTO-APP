@@ -2452,9 +2452,10 @@ async def start_experience(sid, data):
     slide = get_current_slide_data(code)
     admin_slide = get_current_slide_admin(code)
 
-    # Include timer data in game_started for frame slides
+    # Include timer data in game_started for frame slides (not videos)
     timer_data = None
-    if slide and slide["slide_type"] == "frame":
+    is_video = slide and slide.get("media_type") == "video"
+    if slide and slide["slide_type"] == "frame" and not is_video:
         duration = slide.get("display_duration") or room["experience"].get("default_image_duration", 8)
         import time as _time
         deadline = int((_time.time() + duration) * 1000)
@@ -2622,7 +2623,8 @@ async def advance_slide(code, direction):
             return
 
     timer_data = None
-    if slide and slide["slide_type"] == "frame":
+    is_video = slide and slide.get("media_type") == "video"
+    if slide and slide["slide_type"] == "frame" and not is_video:
         duration = slide.get("display_duration") or room.get("experience", {}).get("default_image_duration", 8)
         import time as _time
         deadline = int((_time.time() + duration) * 1000)
