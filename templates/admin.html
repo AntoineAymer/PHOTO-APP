@@ -740,12 +740,11 @@
         </div>
 
         <!-- Drop zone -->
-        <div class="drop-zone" id="dashboard-drop-zone" role="button" tabindex="0"
+        <div class="drop-zone" id="dashboard-drop-zone"
              ondragover="event.preventDefault(); this.classList.add('drag-over');"
              ondragleave="this.classList.remove('drag-over');"
              ondrop="event.preventDefault(); this.classList.remove('drag-over'); handleFileUpload(event.dataTransfer.files);"
-             onclick="document.getElementById('file-upload-input').click();"
-             onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();document.getElementById('file-upload-input').click();}">
+             onclick="document.getElementById('file-upload-input').click();">
             <div class="drop-zone-icon">&#128247;</div>
             <div class="drop-zone-text">Drag &amp; drop photos or videos here</div>
             <div class="drop-zone-hint">or click to browse — supports JPG, PNG, HEIC, MP4, MOV and more</div>
@@ -770,6 +769,17 @@
         <div id="show-list"></div>
         <div id="step-shows" style="display:none;"></div>
         <div id="step-play" style="display:none;"></div>
+
+        <!-- Past Sessions -->
+        <div id="history-section" style="margin-top:24px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+                <span style="font-size:15px; font-weight:600;" data-t="admin.past_sessions">Past Sessions</span>
+                <button class="btn btn-secondary" onclick="loadHistory()" style="min-height:32px; font-size:12px; padding:4px 12px;">
+                    &#8635; <span data-t="admin.refresh">Refresh</span>
+                </button>
+            </div>
+            <div id="history-list" style="font-size:13px; color:var(--text-muted);">Loading...</div>
+        </div>
     </div>
 
     <!-- ═══ Import Photos Section ═══ -->
@@ -1178,9 +1188,9 @@
 </div>
 
 <!-- ═══ Slide Preview Modal ═══ -->
-<div id="slide-preview-modal" role="dialog" aria-label="Slide preview" style="display:none; position:fixed; inset:0; z-index:9000; background:rgba(0,0,0,0.85); align-items:center; justify-content:center; cursor:pointer;"
-     onclick="closeSlidePreview()" onkeydown="if(event.key==='Escape')closeSlidePreview();">
-    <div style="max-width:800px; width:90%; max-height:90vh; position:relative;" onclick="event.stopPropagation()" onkeydown="event.stopPropagation()">
+<div id="slide-preview-modal" style="display:none; position:fixed; inset:0; z-index:9000; background:rgba(0,0,0,0.85); align-items:center; justify-content:center; cursor:pointer;"
+     onclick="closeSlidePreview()">
+    <div style="max-width:800px; width:90%; max-height:90vh; position:relative;" onclick="event.stopPropagation()">
         <button onclick="closeSlidePreview()" style="position:absolute; top:-12px; right:-12px; z-index:1; background:var(--bg-surface); border:1px solid var(--border-color); border-radius:50%; width:36px; height:36px; color:var(--text-primary); cursor:pointer; font-size:18px;">&#10005;</button>
         <div id="slide-preview-content" style="background:var(--bg-surface); border-radius:16px; overflow:hidden; padding:24px;"></div>
     </div>
@@ -1239,8 +1249,9 @@
         experiences = await expRes.json();
         renderShowList();
 
-        // Active rooms
+        // Active rooms + past sessions
         await refreshActiveRooms();
+        loadHistory();
 
         // Step 3
         document.getElementById('step-play').style.display = experiences.length > 0 ? '' : 'none';
@@ -1329,7 +1340,47 @@
             await fetch(`/api/rooms/${code}`, { method: 'DELETE' });
             toast('Room ended');
             refreshActiveRooms();
+            loadHistory();
         });
+    }
+
+    async function loadHistory() {
+        const list = document.getElementById('history-list');
+        try {
+            const res = await fetch('/api/rooms/history');
+            const sessions = await res.json();
+            if (sessions.length === 0) {
+                list.innerHTML = `<div style="color:var(--text-muted); padding:12px; text-align:center;">${t('admin.no_past_sessions') || 'No past sessions yet.'}</div>`;
+                return;
+            }
+            list.innerHTML = sessions.map(s => {
+                const date = s.created_at ? new Date(s.created_at).toLocaleString() : '?';
+                const playerCount = s.players.length;
+                const topPlayer = s.players[0];
+                const accuracy = s.total_answers > 0 ? Math.round(s.correct_answers / s.total_answers * 100) : 0;
+                const playerList = s.players.map((p, i) =>
+                    `<span style="display:inline-flex; align-items:center; gap:4px; margin-right:10px;">${i === 0 ? '&#129351;' : i === 1 ? '&#129352;' : i === 2 ? '&#129353;' : ''}  <b>${escapeHtml(p.nickname)}</b> <span style="color:var(--accent-light-blue);">${p.score}pts</span></span>`
+                ).join('');
+                return `
+                <div style="background:var(--bg-surface); border:1px solid var(--border-color); border-radius:10px; padding:12px 16px; margin-bottom:8px;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                        <div>
+                            <span style="font-weight:700; font-size:14px; color:#fff;">${escapeHtml(s.experience_name)}</span>
+                            <span style="font-size:11px; color:var(--text-muted); margin-left:8px;">${date}</span>
+                        </div>
+                        <span style="font-size:11px; padding:2px 8px; border-radius:4px; background:#64748b; color:#fff;">${escapeHtml(s.code)}</span>
+                    </div>
+                    <div style="font-size:12px; color:var(--text-secondary); margin-bottom:4px;">
+                        ${playerCount} ${playerCount === 1 ? 'player' : 'players'} &middot;
+                        ${s.total_answers} ${t('admin.answers') || 'answers'} &middot;
+                        ${accuracy}% ${t('admin.correct') || 'correct'}
+                    </div>
+                    ${playerCount > 0 ? `<div style="font-size:12px; margin-top:4px;">${playerList}</div>` : ''}
+                </div>`;
+            }).join('');
+        } catch(e) {
+            list.innerHTML = '<div style="color:var(--text-muted);">Could not load history</div>';
+        }
     }
 
     function renderShowList() {

@@ -661,7 +661,7 @@
         });
 
         socket.on('timer_start', (data) => {
-            clearTimeout(window._timerFallback);
+            clearTimeout(globalThis._timerFallback);
             startDisplayTimer(data.duration, data.deadline);
         });
 
@@ -853,8 +853,8 @@
         // Fallback: start local timer if server timer_start doesn't arrive within 1s
         // (e.g., after reconnection or race condition)
         if (!slide._relaxed) {
-            clearTimeout(window._timerFallback);
-            window._timerFallback = setTimeout(() => {
+            clearTimeout(globalThis._timerFallback);
+            globalThis._timerFallback = setTimeout(() => {
                 if (!timerInterval) {
                     console.log('Timer fallback: starting local timer');
                     startDisplayTimer(timerDur);
