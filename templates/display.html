@@ -1426,7 +1426,7 @@
             const vid = document.createElement('video');
             vid.src = slide.media_url;
             vid.autoplay = true;
-            vid.muted = true;
+            vid.muted = false;
             vid.playsInline = true;
             vid.addEventListener('ended', () => {
                 socket.emit('display_video_ended', { code: roomCode });
