@@ -516,6 +516,21 @@
         </div>
     </div>
 
+    <!-- SCREEN: Intermission (tap to reclaim) -->
+    <div id="screen-intermission" class="screen">
+        <div class="centered-screen" style="gap:16px; padding:20px;">
+            <div style="font-size:48px;">&#9749;</div>
+            <div style="font-family:var(--font-heading,'Ubuntu',sans-serif); font-size:28px; font-weight:800; color:#fff; text-transform:uppercase; letter-spacing:2px;" data-t="player.intermission_title">Intermission</div>
+            <div style="font-size:16px; color:rgba(255,255,255,0.8); text-align:center; max-width:85%; line-height:1.4;" data-t="player.intermission_subtitle">Tap your name to get back in the game</div>
+            <div id="reclaim-list" style="width:100%; max-width:340px; max-height:55vh; overflow-y:auto; display:flex; flex-direction:column; gap:8px; margin-top:8px;"></div>
+            <div id="reclaim-status" style="display:none; text-align:center; margin-top:12px;">
+                <div style="font-size:40px;">&#10003;</div>
+                <div id="reclaim-status-text" style="font-size:18px; font-weight:700; color:#22c55e; margin:8px 0;"></div>
+                <div style="font-size:14px; color:rgba(255,255,255,0.6);" data-t="player.reclaim_waiting">Waiting for the host to resume...</div>
+            </div>
+        </div>
+    </div>
+
     <!-- SCREEN 11: Game Over -->
     <div id="screen-gameover" class="screen">
         <div class="gameover-content">
@@ -697,6 +712,34 @@
 
         socket.on('paused', () => { stopTimer(); showScreen('screen-paused'); });
 
+        socket.on('intermission', (data) => {
+            stopTimer();
+            showIntermissionScreen(data.players);
+        });
+
+        socket.on('reclaim_success', (data) => {
+            playerId = data.player_id;
+            playerNickname = data.nickname;
+            myScore = data.score || 0;
+            // Show success state
+            const list = document.getElementById('reclaim-list');
+            const status = document.getElementById('reclaim-status');
+            list.style.display = 'none';
+            status.style.display = 'block';
+            const msg = (t('player.reclaim_success') || 'Welcome back, {name}!').replace('{name}', data.nickname);
+            document.getElementById('reclaim-status-text').textContent = msg;
+        });
+
+        socket.on('reclaim_error', (data) => {
+            if (data.message === 'already_claimed') {
+                alert(t('player.reclaim_already_claimed') || 'This name has already been claimed.');
+            }
+        });
+
+        socket.on('resumed_break', () => {
+            // Server will send slide_changed next, which shows the right screen
+        });
+
         socket.on('resumed', () => {
             if (isRevealed) {
                 showScreen('screen-game');  // Stay on reveal result screen
@@ -768,6 +811,27 @@
                 playerIntroTimer = null;
             }
         }, 1000);
+    }
+
+    function showIntermissionScreen(players) {
+        const list = document.getElementById('reclaim-list');
+        const status = document.getElementById('reclaim-status');
+        list.style.display = 'flex';
+        status.style.display = 'none';
+        list.innerHTML = '';
+        players.forEach(p => {
+            const btn = document.createElement('button');
+            btn.className = 'btn btn-secondary btn-large w-full';
+            btn.style.cssText = 'min-height:56px; font-size:18px; font-weight:700; display:flex; align-items:center; justify-content:center; gap:10px;';
+            btn.innerHTML = `<span style="font-size:24px;">&#128100;</span> ${p.nickname}`;
+            btn.onclick = () => {
+                btn.disabled = true;
+                btn.style.opacity = '0.5';
+                socket.emit('reclaim_player', { code: roomCode, player_id: p.id });
+            };
+            list.appendChild(btn);
+        });
+        showScreen('screen-intermission');
     }
 
     function showWatchingScreen(slide) {
@@ -1018,14 +1082,8 @@
 
         const codeInput = document.getElementById('input-code');
         if (isPreview && roomCode) {
-            // Preview mode: auto-join as observer, scale down, disable interaction
-            document.body.style.transform = 'scale(0.6)';
-            document.body.style.transformOrigin = 'top left';
-            document.body.style.width = '167%';
-            document.body.style.pointerEvents = 'none';
-            playerNickname = 'Preview';
-            connectSocket();
-            return;
+            // Preview mode inside admin phone emulator — fully interactive, no scaling
+            // User can interact with the phone exactly like a real player
         }
         if (roomCode) {
             try {

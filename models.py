@@ -33,6 +33,7 @@ class GameState(str, enum.Enum):
     PAUSED = "paused"
     REVEALING = "revealing"
     LEADERBOARD = "leaderboard"
+    BREAK = "break"
     FINISHED = "finished"
 
 

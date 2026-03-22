@@ -1103,6 +1103,7 @@
             <span id="game-room-badge" style="font-size:12px; padding:3px 10px; border-radius:8px; background:rgba(18,171,219,0.15); color:var(--accent-light-blue); font-weight:700; font-family:monospace; letter-spacing:1px;"></span>
             <span id="conn-status" style="font-size:11px; padding:3px 10px; border-radius:12px; background:#16a34a; color:#fff; font-weight:600;">Connected</span>
         </div>
+        <button class="big-btn big-btn-secondary" onclick="toggleIntermission()" id="btn-intermission" style="min-height:36px; font-size:13px; padding:6px 16px;" data-t="admin.intermission">Intermission</button>
         <button class="big-btn big-btn-danger" onclick="endGame()" id="btn-end-game" style="min-height:36px; font-size:13px; padding:6px 16px;" data-t="admin.end_show">End</button>
     </div>
 
@@ -1254,7 +1255,7 @@
                 <span>Projector Screen</span>
                 <a id="display-open-tab" href="#" target="_blank" onclick="this.href=`/display?room=${currentRoomCode}`" style="font-size:10px; color:var(--accent-light-blue); text-decoration:none; opacity:0.7;" title="Open display in new tab">&#8599; Open</a>
             </div>
-            <iframe id="preview-display" title="Projector screen preview" class="preview-iframe-display" sandbox="allow-scripts allow-same-origin allow-forms"></iframe>
+            <iframe id="preview-display" title="Projector screen preview" class="preview-iframe-display"></iframe>
         </div>
 
         <!-- Column 3: Phone Preview -->
@@ -1262,7 +1263,7 @@
             <div class="col-label">PLAYER PHONE</div>
             <div class="phone-frame">
                 <div class="phone-island"></div>
-                <iframe id="preview-player" title="Player phone preview" sandbox="allow-scripts allow-same-origin allow-forms"></iframe>
+                <iframe id="preview-player" title="Player phone preview" style="pointer-events:auto;"></iframe>
                 <div class="phone-home-bar"></div>
             </div>
             <div class="phone-actions">
@@ -3419,7 +3420,7 @@
         const displayFrame = document.getElementById('preview-display');
         const playerFrame = document.getElementById('preview-player');
         if (displayFrame) displayFrame.src = `/display?room=${code}&embed=1`;
-        if (playerFrame) playerFrame.src = `/play/${code}?preview=1`;
+        if (playerFrame) playerFrame.src = `/play/${code}`;
     }
 
     let testPlayerCount = 0;
@@ -3483,6 +3484,30 @@
         });
         socket.on('show_leaderboard', () => { leaderboardShowing = true; });
         socket.on('dismissed_leaderboard', () => { leaderboardShowing = false; });
+        socket.on('intermission', (data) => {
+            isIntermission = true;
+            isPaused = false;
+            stopFrameTimer();
+            const btn = document.getElementById('btn-intermission');
+            if (btn) {
+                btn.textContent = t('admin.resume_intermission') || 'Resume Game';
+                btn.className = 'big-btn big-btn-success';
+            }
+            // Show reclaim progress in scoreboard area
+            updateIntermissionStatus(data.players || []);
+        });
+        socket.on('reclaim_update', (data) => {
+            if (data.players) updatePlayerInfo(data.players);
+            toast(`${data.nickname} ${t('admin.reclaimed') || 'reclaimed'}`);
+        });
+        socket.on('resumed_break', () => {
+            isIntermission = false;
+            const btn = document.getElementById('btn-intermission');
+            if (btn) {
+                btn.textContent = t('admin.intermission') || 'Intermission';
+                btn.className = 'big-btn big-btn-secondary';
+            }
+        });
     }
 
     function updatePlayerInfo(players) {
@@ -3535,6 +3560,34 @@
                 <span class="sb-score">${p.score}</span>
             </div>`;
         }).join('');
+    }
+
+    function updateIntermissionStatus(players) {
+        const sbRows = document.getElementById('sb-rows');
+        const sbCount = document.getElementById('sb-player-count');
+        if (sbCount) sbCount.textContent = players.length;
+        if (!sbRows) return;
+        sbRows.innerHTML = players.sort((a, b) => a.nickname.localeCompare(b.nickname)).map(p => {
+            const claimed = p.claimed;
+            const statusIcon = claimed
+                ? '<span style="color:#22c55e;">&#10003;</span>'
+                : '<span style="color:#94a3b8;">&#8987;</span>';
+            const kickBtn = claimed
+                ? `<button onclick="kickReclaim(${p.id})" style="background:none; border:none; color:#ef4444; cursor:pointer; padding:2px 6px; font-size:11px;" title="${t('admin.kick_reclaim') || 'Undo'}">&#10005;</button>`
+                : '';
+            return `<div class="sb-row${claimed ? '' : ' sb-disconnected'}">
+                <span class="sb-status">${statusIcon}</span>
+                <span class="sb-name">${escapeHtml(p.nickname)}</span>
+                <span class="sb-score">${p.score}</span>
+                ${kickBtn}
+            </div>`;
+        }).join('');
+    }
+
+    function kickReclaim(playerId) {
+        showConfirmDialog(t('admin.kick_reclaim_confirm') || "Undo this player's reclaim?", () => {
+            socket?.emit('admin_kick_reclaim', {code: currentRoomCode, player_id: playerId});
+        });
     }
 
     let frameTimerInterval = null;
@@ -3644,6 +3697,22 @@
         document.querySelectorAll('#btn-lock, #btn-lock-playing').forEach(el => { if (el) el.textContent = lockText; });
     }
 
+    let isIntermission = false;
+
+    function toggleIntermission() {
+        if (isIntermission) {
+            // Resume from intermission
+            showConfirmDialog(t('admin.resume_intermission_confirm') || 'End the intermission and resume the game?', () => {
+                socket?.emit('admin_resume_break', {code: currentRoomCode});
+            });
+        } else {
+            // Start intermission
+            showConfirmDialog(t('admin.intermission_confirm') || 'Start an intermission? Players will need to reclaim their name when you resume.', () => {
+                socket?.emit('admin_break', {code: currentRoomCode});
+            });
+        }
+    }
+
     function endGame() {
         const name = currentExperience?.name || currentRoomCode;
         const players = document.querySelectorAll('.sb-row').length || 0;
@@ -3662,6 +3731,7 @@
         currentRoomCode = null;
         currentGameSlide = null;
         isPaused = false;
+        isIntermission = false;
         // Close external display window if open
         if (displayWindow && !displayWindow.closed) {
             displayWindow.close();

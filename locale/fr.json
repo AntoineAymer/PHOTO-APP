@@ -204,7 +204,15 @@
     "err_save": "Impossible d'enregistrer. Réessayez.",
     "err_delete": "Impossible de supprimer. Réessayez.",
     "err_reset": "Impossible de réinitialiser. Réessayez.",
-    "err_slide": "Impossible de créer la diapositive. Réessayez."
+    "err_slide": "Impossible de créer la diapositive. Réessayez.",
+    "intermission": "Entracte",
+    "intermission_confirm": "Lancer un entracte ? Les joueurs devront récupérer leur nom à la reprise.",
+    "resume_intermission": "Reprendre le jeu",
+    "resume_intermission_confirm": "Terminer l'entracte et reprendre le jeu ?",
+    "intermission_active": "Entracte en cours",
+    "reclaimed": "récupéré",
+    "kick_reclaim": "Annuler",
+    "kick_reclaim_confirm": "Annuler la récupération de ce joueur ? Il devra retaper son nom."
   },
   "player": {
     "join_title": "Rejoindre le jeu",
@@ -250,7 +258,12 @@
     "connection_error": "Impossible de joindre le serveur. R\u00e9essaie.",
     "back": "\u2190 Retour",
     "retry": "R\u00e9essayer",
-    "go_home": "Retour \u00e0 l'accueil"
+    "go_home": "Retour \u00e0 l'accueil",
+    "intermission_title": "Entracte",
+    "intermission_subtitle": "Appuie sur ton nom pour revenir dans le jeu",
+    "reclaim_success": "Bon retour, {name}\u00a0!",
+    "reclaim_already_claimed": "Ce nom a d\u00e9j\u00e0 \u00e9t\u00e9 r\u00e9cup\u00e9r\u00e9.",
+    "reclaim_waiting": "En attente de la reprise par l'animateur..."
   },
   "display": {
     "scan_to_join": "Scannez pour rejoindre",
@@ -279,6 +292,9 @@
     "paused": "Pause",
     "media_unavailable": "Média indisponible",
     "room_code_label": "CODE DE LA SALLE",
-    "show_label": "Spectacle"
+    "show_label": "Animation",
+    "intermission": "Entracte",
+    "intermission_subtitle": "On revient tout de suite",
+    "intermission_reclaimed": "{claimed} joueurs sur {total} de retour"
   }
 }

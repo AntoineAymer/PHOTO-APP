@@ -74,20 +74,9 @@ def load_locale(lang="en"):
         return json.load(f)
 
 # ── Server hostname ───────────────────────────────────────────────────────────
-def get_server_host():
-    """Get hostname for QR codes and join URLs.
-    Priority: SERVER_HOST env > photoframe.local (if resolves) > LAN IP."""
+def _get_lan_ip():
+    """Get the LAN IP address (works on all phones, unlike .local mDNS)."""
     import subprocess
-    env_host = os.environ.get("SERVER_HOST")
-    if env_host:
-        return env_host
-    # Check if photoframe.local resolves (mDNS)
-    try:
-        import socket as _sock
-        _sock.getaddrinfo("photoframe.local", None, _sock.AF_INET, _sock.SOCK_STREAM)
-        return "photoframe.local"
-    except Exception:
-        pass
     for iface in ("en0", "en1"):
         try:
             ip = subprocess.check_output(
@@ -99,8 +88,24 @@ def get_server_host():
             continue
     return "127.0.0.1"
 
+def get_server_host():
+    """Get hostname for display purposes.
+    Priority: SERVER_HOST env > photoframe.local (if resolves) > LAN IP."""
+    env_host = os.environ.get("SERVER_HOST")
+    if env_host:
+        return env_host
+    # Check if photoframe.local resolves (mDNS)
+    try:
+        import socket as _sock
+        _sock.getaddrinfo("photoframe.local", None, _sock.AF_INET, _sock.SOCK_STREAM)
+        return "photoframe.local"
+    except Exception:
+        pass
+    return _get_lan_ip()
+
 SERVER_PORT = int(os.environ.get("PORT", 8080))
 SERVER_HOST = get_server_host()
+SERVER_LAN_IP = _get_lan_ip()  # Always IP — used for QR codes (mDNS unreliable on Android)
 SERVER_PROTO = "http"  # DO NOT change to https — self-signed certs break mobile phones
 
 # ── Database ─────────────────────────────────────────────────────────────────
@@ -1685,7 +1690,7 @@ async def _restore_room(session, db_room):
         return
 
     import qrcode, io, base64
-    join_url = f"{SERVER_PROTO}://{SERVER_HOST}:{SERVER_PORT}/play/{db_room.code}"
+    join_url = f"{SERVER_PROTO}://{SERVER_LAN_IP}:{SERVER_PORT}/play/{db_room.code}"
     qr = qrcode.make(join_url, box_size=10, border=2)
     buf = io.BytesIO()
     qr.save(buf, format="PNG")
@@ -1964,7 +1969,7 @@ async def create_room(request: Request, db=Depends(get_db)):
     import qrcode
     import io
     import base64
-    join_url = f"{SERVER_PROTO}://{SERVER_HOST}:{SERVER_PORT}/play/{code}"
+    join_url = f"{SERVER_PROTO}://{SERVER_LAN_IP}:{SERVER_PORT}/play/{code}"
     qr = qrcode.make(join_url, box_size=10, border=2)
     buf = io.BytesIO()
     qr.save(buf, format="PNG")
@@ -2081,12 +2086,15 @@ def get_player_list(code):
     players = []
     for p in room["players"].values():
         answered_info = current_answers.get(p["id"])
-        players.append({
+        entry = {
             "id": p["id"], "nickname": p["nickname"],
             "score": p["score"], "connected": p["connected"],
             "answered": answered_info is not None,
             "was_correct": answered_info["is_correct"] if answered_info else None,
-        })
+        }
+        if room.get("state") == "break":
+            entry["claimed"] = p.get("claimed", False)
+        players.append(entry)
     # Sort by score descending
     players.sort(key=lambda x: x["score"], reverse=True)
     return players
@@ -2688,6 +2696,140 @@ async def toggle_phone_timer(sid, data):
     await sio.emit("phone_timer_toggle", {"visible": visible}, room=f"player_{code}")
 
 @sio.event
+async def admin_break(sid, data):
+    """Start an intermission — persistent break state with player reclaim."""
+    if not is_admin(sid): return
+    code = data.get("code")
+    room = active_rooms.get(code)
+    if not room: return
+    # Cancel any running timer
+    if room.get("timer_task"):
+        room["timer_task"].cancel()
+        room["timer_task"] = None
+    room["pre_break_state"] = room.get("state", "playing")
+    room["pre_break_slide_index"] = room.get("current_slide_index", 0)
+    room["state"] = "break"
+    # Mark all players as unclaimed (they must tap to reclaim)
+    for p in room["players"].values():
+        p["claimed"] = False
+        p["connected"] = False
+    # Build player list for reclaim screen
+    player_names = [{"id": p["id"], "nickname": p["nickname"], "score": p["score"]}
+                    for p in sorted(room["players"].values(), key=lambda x: x["nickname"].lower())]
+    # Persist state to DB
+    async with SessionLocal() as db:
+        result = await db.execute(select(Room).where(Room.code == code))
+        db_room = result.scalar_one_or_none()
+        if db_room:
+            db_room.state = GameState.BREAK
+            await db.commit()
+    await sio.emit("intermission", {"players": player_names}, room=f"display_{code}")
+    await sio.emit("intermission", {"players": player_names}, room=f"player_{code}")
+    await sio.emit("intermission", {"players": player_names}, room=f"admin_{code}")
+
+@sio.event
+async def admin_resume_break(sid, data):
+    """End intermission and resume the game."""
+    if not is_admin(sid): return
+    code = data.get("code")
+    room = active_rooms.get(code)
+    if not room or room.get("state") != "break": return
+    room["state"] = room.pop("pre_break_state", "playing")
+    room.pop("pre_break_slide_index", None)
+    # Persist state to DB
+    async with SessionLocal() as db:
+        result = await db.execute(select(Room).where(Room.code == code))
+        db_room = result.scalar_one_or_none()
+        if db_room:
+            db_room.state = GameState.PLAYING
+            await db.commit()
+    # Re-emit current slide to resume
+    idx = room["current_slide_index"]
+    slide = get_current_slide_data(code)
+    player_slide = get_current_slide_player(code)
+    await sio.emit("resumed_break", {}, room=f"admin_{code}")
+    if slide:
+        await sio.emit("slide_changed", {"slide": slide, "index": idx, "total": len(room["slides"])}, room=f"display_{code}")
+        await sio.emit("slide_changed", {"slide": player_slide, "index": idx, "total": len(room["slides"])}, room=f"player_{code}")
+    else:
+        await sio.emit("resumed", {}, room=f"display_{code}")
+        await sio.emit("resumed", {}, room=f"player_{code}")
+
+@sio.event
+async def reclaim_player(sid, data):
+    """Player taps a name during intermission to reclaim their identity."""
+    code = data.get("code", "").upper().strip()
+    player_id = data.get("player_id")
+    room = active_rooms.get(code)
+    if not room or room.get("state") != "break": return
+    # Find the target player entry
+    target_sid = None
+    target_player = None
+    for psid, p in room["players"].items():
+        if p["id"] == player_id:
+            target_sid = psid
+            target_player = p
+            break
+    if not target_player:
+        await sio.emit("reclaim_error", {"message": "player_not_found"}, to=sid)
+        return
+    if target_player.get("claimed"):
+        await sio.emit("reclaim_error", {"message": "already_claimed"}, to=sid)
+        return
+    # Reclaim: move player entry to new sid
+    del room["players"][target_sid]
+    target_player["connected"] = True
+    target_player["claimed"] = True
+    room["players"][sid] = target_player
+    await sio.enter_room(sid, f"player_{code}")
+    await sio.emit("reclaim_success", {
+        "player_id": target_player["id"],
+        "nickname": target_player["nickname"],
+        "score": target_player["score"],
+    }, to=sid)
+    # Notify admin of reclaim activity
+    claimed_names = [p["nickname"] for p in room["players"].values() if p.get("claimed")]
+    total = len(room["players"])
+    await sio.emit("reclaim_update", {
+        "player_id": target_player["id"],
+        "nickname": target_player["nickname"],
+        "claimed_count": len(claimed_names),
+        "total": total,
+        "players": get_player_list(code),
+    }, room=f"admin_{code}")
+    # Update display player count
+    await sio.emit("reclaim_update", {
+        "claimed_count": len(claimed_names),
+        "total": total,
+    }, room=f"display_{code}")
+
+@sio.event
+async def admin_kick_reclaim(sid, data):
+    """Admin rejects a wrong reclaim — unclaims the player."""
+    if not is_admin(sid): return
+    code = data.get("code")
+    player_id = data.get("player_id")
+    room = active_rooms.get(code)
+    if not room: return
+    for psid, p in list(room["players"].items()):
+        if p["id"] == player_id and p.get("claimed"):
+            p["claimed"] = False
+            p["connected"] = False
+            await sio.emit("kicked", {}, to=psid)
+            # Move back to a placeholder sid
+            del room["players"][psid]
+            fake_sid = f"_unclaimed_{p['id']}"
+            room["players"][fake_sid] = p
+            break
+    # Re-send updated player list
+    claimed_names = [p["nickname"] for p in room["players"].values() if p.get("claimed")]
+    await sio.emit("reclaim_update", {
+        "claimed_count": len(claimed_names),
+        "total": len(room["players"]),
+        "players": get_player_list(code),
+    }, room=f"admin_{code}")
+
+@sio.event
 async def remove_player(sid, data):
     if not is_admin(sid): return
     code = data.get("code")
@@ -2729,6 +2871,14 @@ async def player_join(sid, data):
     room = active_rooms.get(code)
     if not room:
         await sio.emit("join_error", {"message": "room_not_found"}, to=sid)
+        return
+
+    # During intermission, redirect to reclaim screen (no new joins, only reclaims)
+    if room.get("state") == "break":
+        await sio.enter_room(sid, f"player_{code}")
+        player_names = [{"id": p["id"], "nickname": p["nickname"], "score": p["score"]}
+                        for p in sorted(room["players"].values(), key=lambda x: x["nickname"].lower())]
+        await sio.emit("intermission", {"players": player_names}, to=sid)
         return
 
     if room["is_locked"]:

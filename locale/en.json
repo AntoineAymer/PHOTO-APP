@@ -204,7 +204,15 @@
     "err_save": "Could not save. Please try again.",
     "err_delete": "Could not delete. Please try again.",
     "err_reset": "Could not reset. Please try again.",
-    "err_slide": "Could not create the slide. Please try again."
+    "err_slide": "Could not create the slide. Please try again.",
+    "intermission": "Intermission",
+    "intermission_confirm": "Start an intermission? Players will need to reclaim their name when you resume.",
+    "resume_intermission": "Resume Game",
+    "resume_intermission_confirm": "End the intermission and resume the game?",
+    "intermission_active": "Intermission in progress",
+    "reclaimed": "reclaimed",
+    "kick_reclaim": "Undo",
+    "kick_reclaim_confirm": "Undo this player's reclaim? They will need to tap their name again."
   },
   "player": {
     "join_title": "Join the Game",
@@ -250,7 +258,12 @@
     "connection_error": "Could not reach the server. Try again.",
     "back": "\u2190 Back",
     "retry": "Try again",
-    "go_home": "Back to Home"
+    "go_home": "Back to Home",
+    "intermission_title": "Intermission",
+    "intermission_subtitle": "Tap your name to get back in the game",
+    "reclaim_success": "Welcome back, {name}!",
+    "reclaim_already_claimed": "This name has already been claimed.",
+    "reclaim_waiting": "Waiting for the host to resume..."
   },
   "display": {
     "scan_to_join": "Scan to join",
@@ -279,6 +292,9 @@
     "paused": "Paused",
     "media_unavailable": "Media unavailable",
     "room_code_label": "ROOM CODE",
-    "show_label": "Show"
+    "show_label": "Show",
+    "intermission": "Intermission",
+    "intermission_subtitle": "We'll be right back",
+    "intermission_reclaimed": "{claimed} of {total} players back"
   }
 }

@@ -814,6 +814,16 @@
         <div class="leaderboard" id="d-leaderboard-list"></div>
     </div>
 
+    <!-- INTERMISSION -->
+    <div id="d-intermission" class="dscreen">
+        <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; height:100%; gap:24px; text-align:center;">
+            <div style="font-size:80px;">&#9749;</div>
+            <div style="font-family:var(--font-heading,'Ubuntu',sans-serif); font-size:clamp(36px,6vw,64px); font-weight:800; color:#fff; text-transform:uppercase; letter-spacing:3px; text-shadow:0 2px 16px rgba(0,112,173,0.4);" data-t="display.intermission">Intermission</div>
+            <div style="font-size:clamp(18px,3vw,28px); color:rgba(255,255,255,0.7); max-width:80%;" data-t="display.intermission_subtitle">We'll be right back</div>
+            <div id="d-intermission-count" style="font-size:clamp(16px,2.5vw,22px); color:var(--accent-light-blue); font-weight:600; margin-top:12px;"></div>
+        </div>
+    </div>
+
     <!-- PAUSED -->
     <div id="d-paused" class="pause-overlay" style="display: none;" data-t="display.paused">
         Paused
@@ -910,10 +920,7 @@
         roomCode = params.get('room') || '';
         const isEmbed = params.get('embed') === '1';
         if (isEmbed) {
-            document.body.style.transform = 'scale(0.5)';
-            document.body.style.transformOrigin = 'top left';
-            document.body.style.width = '200%';
-            document.body.style.height = '200%';
+            // Embedded in admin panel — content scales naturally via viewport
             document.body.style.overflow = 'hidden';
         }
 
@@ -1011,6 +1018,27 @@
             // Resume video if it was paused
             const vid = document.querySelector('#frame-container video');
             if (vid && vid.paused && !vid.ended) vid.play().catch(()=>{});
+        });
+
+        socket.on('intermission', (data) => {
+            stopTimer();
+            const vid = document.querySelector('#frame-container video');
+            if (vid && !vid.paused) vid.pause();
+            document.getElementById('d-paused').style.display = 'none';
+            const countEl = document.getElementById('d-intermission-count');
+            const claimed = data.players ? data.players.filter(p => p.claimed).length : 0;
+            const total = data.players ? data.players.length : 0;
+            countEl.textContent = (t('display.intermission_reclaimed') || '{claimed} of {total} players back')
+                .replace('{claimed}', claimed).replace('{total}', total);
+            showDScreen('d-intermission');
+        });
+
+        socket.on('reclaim_update', (data) => {
+            const countEl = document.getElementById('d-intermission-count');
+            if (countEl) {
+                countEl.textContent = (t('display.intermission_reclaimed') || '{claimed} of {total} players back')
+                    .replace('{claimed}', data.claimed_count).replace('{total}', data.total);
+            }
         });
 
         socket.on('game_finished', (data) => {
