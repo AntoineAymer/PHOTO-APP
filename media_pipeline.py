@@ -861,6 +861,14 @@ def _gemini_generate_image(img_b64: str, api_key: str, prompt: str, model: str) 
             inline = part.get("inlineData", {})
             if inline.get("mimeType", "").startswith("image/"):
                 return b64mod.b64decode(inline["data"])
+    # Log why no image was returned
+    if candidates:
+        finish_reason = candidates[0].get("finishReason", "unknown")
+        text_parts = [p.get("text", "") for p in candidates[0].get("content", {}).get("parts", []) if p.get("text")]
+        print(f"Gemini returned no image. finishReason={finish_reason}, text={' '.join(text_parts)[:200]}")
+    else:
+        block_reason = result.get("promptFeedback", {}).get("blockReason", "unknown")
+        print(f"Gemini returned no candidates. blockReason={block_reason}, response keys={list(result.keys())}")
     return None
 
 
@@ -1261,10 +1269,13 @@ def remove_person_gemini(source_path: str, person_description: str, output_dir: 
         prompt = prompts.get("missing", _DEFAULT_PROMPTS["missing"]).replace("{person}", person_description)
 
         for model in _GEMINI_MODELS:
+          for attempt in range(2):
             try:
-                print(f"Gemini remove person: trying {model}...")
+                print(f"Gemini remove person: trying {model} (attempt {attempt+1})...")
                 img_data = _gemini_generate_image(img_b64, api_key, prompt, model)
                 if not img_data:
+                    if attempt == 0:
+                        import time; time.sleep(1)
                     continue
                 gen_img = Image.open(io.BytesIO(img_data)).convert("RGB")
                 gen_img.save(out_path, "PNG")
@@ -1310,10 +1321,13 @@ def silhouette_person_gemini(source_path: str, person_description: str, output_d
         prompt = prompts.get("shadow", _DEFAULT_PROMPTS["shadow"]).replace("{person}", person_description)
 
         for model in _GEMINI_MODELS:
+          for attempt in range(2):
             try:
-                print(f"Gemini silhouette person: trying {model}...")
+                print(f"Gemini silhouette person: trying {model} (attempt {attempt+1})...")
                 img_data = _gemini_generate_image(img_b64, api_key, prompt, model)
                 if not img_data:
+                    if attempt == 0:
+                        import time; time.sleep(1)  # brief pause before retry
                     continue
                 gen_img = Image.open(io.BytesIO(img_data)).convert("RGB")
 
