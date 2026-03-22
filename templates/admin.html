@@ -1153,6 +1153,7 @@
             <span id="game-room-badge" style="font-size:12px; padding:3px 10px; border-radius:8px; background:rgba(18,171,219,0.15); color:var(--accent-light-blue); font-weight:700; font-family:monospace; letter-spacing:1px;"></span>
             <span id="conn-status" style="font-size:11px; padding:3px 10px; border-radius:12px; background:#16a34a; color:#fff; font-weight:600;">Connected</span>
         </div>
+        <button class="big-btn big-btn-secondary" onclick="refreshDisplay()" style="min-height:36px; font-size:13px; padding:6px 16px;" title="Refresh the TV/projector display">&#x21bb; Display</button>
         <button class="big-btn big-btn-secondary" onclick="toggleIntermission()" id="btn-intermission" style="min-height:36px; font-size:13px; padding:6px 16px;" data-t="admin.intermission">Intermission</button>
         <button class="big-btn big-btn-secondary" onclick="editDuringGame()" id="btn-edit-quizzes" style="display:none; min-height:36px; font-size:13px; padding:6px 16px; background:rgba(18,171,219,0.15); color:var(--accent-light-blue); border-color:rgba(18,171,219,0.4);">&#9998; Edit Quizzes</button>
         <button class="big-btn big-btn-danger" onclick="endGame()" id="btn-end-game" style="min-height:36px; font-size:13px; padding:6px 16px;" data-t="admin.end_show">End</button>
@@ -4453,6 +4454,12 @@
             document.body.appendChild(bar);
         }
         bar.style.display = 'flex';
+    }
+
+    function refreshDisplay() {
+        if (!currentRoomCode) return;
+        socket?.emit('admin_refresh_display', { code: currentRoomCode });
+        toast('Display refresh sent');
     }
 
     function reloadSlidesInGame() {

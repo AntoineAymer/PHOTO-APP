@@ -1133,6 +1133,8 @@
             updatePersistentBar();
         });
 
+        socket.on('force_reload', () => { location.reload(); });
+
         socket.on('game_started', (data) => {
             experience = data.experience || experience;
             questionIndex = 0;

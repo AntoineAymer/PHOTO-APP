@@ -3011,6 +3011,13 @@ async def toggle_phone_timer(sid, data):
     await sio.emit("phone_timer_toggle", {"visible": visible}, room=f"player_{code}")
 
 @sio.event
+async def admin_refresh_display(sid, data):
+    """Tell the display to reload the page."""
+    if not is_admin(sid): return
+    code = data.get("code")
+    await sio.emit("force_reload", {}, room=f"display_{code}")
+
+@sio.event
 async def admin_reload_slides(sid, data):
     """Reload slides from DB without interrupting scores or players."""
     if not is_admin(sid): return
