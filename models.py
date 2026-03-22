@@ -73,6 +73,7 @@ class Experience(Base):
 
     # Game settings
     default_question_timer = Column(Integer, default=15)  # seconds
+    quiz_intro_duration = Column(Integer, default=3)  # seconds for "Quiz Time!" intro screen
     relaxed_mode = Column(Boolean, default=False)  # no timer, all correct = 100pts
     show_leaderboard_between = Column(Boolean, default=True)
     leaderboard_duration = Column(Integer, default=5)  # seconds
@@ -202,6 +203,7 @@ async def init_db(engine):
             ("max_points", "INTEGER", "100"),
             ("min_points", "INTEGER", "10"),
             ("wrong_points", "INTEGER", "0"),
+            ("quiz_intro_duration", "INTEGER", "3"),
         ]:
             try:
                 await conn.execute(text(f"ALTER TABLE experiences ADD COLUMN {col} {typ} DEFAULT {default}"))

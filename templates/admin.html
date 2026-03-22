@@ -402,13 +402,16 @@
     }
     .sg-item:hover { border-color: var(--accent-light-blue); }
     .sg-item.active-slide { border-color: var(--accent-light-blue); }
-    .sg-item.selected-remove { border-color: #ef4444; }
+    .sg-item.selected-remove { border-color: #ef4444; position: relative; }
+    .sg-item.selected-remove::before { content: ''; position: absolute; inset: 0; background: rgba(239,68,68,0.15); z-index: 1; pointer-events: none; }
     .sg-item.selected-remove::after {
         content: '\2717'; position: absolute; top: 6px; left: 6px;
         width: 24px; height: 24px; border-radius: 50%; background: #ef4444;
         color: #fff; font-size: 14px; font-weight: 700;
         display: flex; align-items: center; justify-content: center;
     }
+    .lasso-rect { position: fixed; border: 2px dashed var(--accent-light-blue); background: rgba(18,171,219,0.1); pointer-events: none; z-index: 9000; }
+    .sg-item.lasso-hover { border-color: var(--accent-light-blue); box-shadow: 0 0 0 2px rgba(18,171,219,0.4); }
     .sg-item img { width: 100%; height: 100%; object-fit: cover; }
     .sg-item .show-badge {
         position: absolute; top: 4px; right: 4px; background: rgba(0,0,0,0.75);
@@ -1068,6 +1071,14 @@
                 </button>
             </div>
 
+            <!-- Keyboard shortcuts hint -->
+            <div style="margin-top:10px; display:flex; flex-wrap:wrap; gap:6px 14px; font-size:11px; color:var(--text-muted);">
+                <span><kbd style="background:rgba(255,255,255,0.1); padding:1px 6px; border-radius:4px; font-family:monospace; font-size:11px; border:1px solid rgba(255,255,255,0.15);">Space</kbd> Pause</span>
+                <span><kbd style="background:rgba(255,255,255,0.1); padding:1px 6px; border-radius:4px; font-family:monospace; font-size:11px; border:1px solid rgba(255,255,255,0.15);">R</kbd> Scores</span>
+                <span><kbd style="background:rgba(255,255,255,0.1); padding:1px 6px; border-radius:4px; font-family:monospace; font-size:11px; border:1px solid rgba(255,255,255,0.15);">&rarr;</kbd> Next</span>
+                <span><kbd style="background:rgba(255,255,255,0.1); padding:1px 6px; border-radius:4px; font-family:monospace; font-size:11px; border:1px solid rgba(255,255,255,0.15);">&larr;</kbd> Back</span>
+            </div>
+
             <!-- Live stats -->
             <div id="gp-stats" style="display:none; margin-top:12px;">
                 <div style="display:flex; justify-content:space-between; margin-bottom:6px;">
@@ -1358,51 +1369,132 @@
         });
     }
 
+    let historyFilter = 'with_players';
+    let allSessions = [];
+    let historyExpId = null;
+
     async function loadHistory(expId) {
+        historyExpId = expId;
         const section = document.getElementById('exp-history-section');
         const list = document.getElementById('exp-history-list');
         if (!section || !list) return;
         try {
             const res = await fetch(`/api/rooms/history?experience_id=${expId}`);
-            const sessions = await res.json();
-            if (sessions.length === 0) {
-                section.style.display = 'none';
-                return;
-            }
+            allSessions = await res.json();
+            if (allSessions.length === 0) { section.style.display = 'none'; return; }
             section.style.display = '';
-            list.innerHTML = sessions.map(s => {
+            renderHistoryPanel();
+        } catch(e) { section.style.display = 'none'; }
+    }
+
+    function renderHistoryPanel() {
+        const list = document.getElementById('exp-history-list');
+        if (!list) return;
+        const filtered = historyFilter === 'with_players'
+            ? allSessions.filter(s => s.players.length > 0) : allSessions;
+        const emptyCount = allSessions.filter(s => s.players.length === 0).length;
+        const withPlayersCount = allSessions.length - emptyCount;
+        const tabStyle = (active) => `flex:1; padding:4px 6px; font-size:10px; border-radius:6px; cursor:pointer; border:1px solid ${active ? 'var(--accent-light-blue)' : 'var(--border-color)'}; background:${active ? 'rgba(18,171,219,0.15)' : 'transparent'}; color:${active ? 'var(--accent-light-blue)' : 'var(--text-muted)'};`;
+
+        let html = `<div style="display:flex; gap:4px; margin-bottom:8px;">
+            <button onclick="setHistoryFilter('with_players')" style="${tabStyle(historyFilter === 'with_players')}">With players (${withPlayersCount})</button>
+            <button onclick="setHistoryFilter('all')" style="${tabStyle(historyFilter === 'all')}">All (${allSessions.length})</button>
+        </div><div style="display:flex; gap:4px; margin-bottom:8px;">`;
+        if (emptyCount > 0)
+            html += `<button onclick="bulkDeleteEmpty()" style="flex:1; padding:4px 6px; font-size:10px; border-radius:6px; border:1px solid rgba(239,68,68,0.3); background:transparent; color:#ef4444; cursor:pointer;">Clear empty (${emptyCount})</button>`;
+        if (filtered.length > 1)
+            html += `<button onclick="bulkDeleteAll()" style="flex:1; padding:4px 6px; font-size:10px; border-radius:6px; border:1px solid rgba(239,68,68,0.3); background:transparent; color:#ef4444; cursor:pointer;">Delete all (${filtered.length})</button>`;
+        html += `</div>`;
+
+        if (filtered.length === 0) {
+            html += `<div style="color:var(--text-muted); text-align:center; padding:16px 0;">No sessions${historyFilter === 'with_players' ? ' with players' : ''}.</div>`;
+        } else {
+            html += filtered.map(s => {
                 const date = s.created_at ? new Date(s.created_at).toLocaleString(undefined, {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'}) : '?';
-                const playerCount = s.players.length;
-                const accuracy = s.total_answers > 0 ? Math.round(s.correct_answers / s.total_answers * 100) : 0;
-                const playerList = s.players.slice(0, 5).map((p, i) =>
-                    `<span style="white-space:nowrap;">${i === 0 ? '&#129351;' : i === 1 ? '&#129352;' : i === 2 ? '&#129353;' : ''} ${escapeHtml(p.nickname)} <b>${p.score}</b></span>`
+                const pc = s.players.length, hasP = pc > 0;
+                const acc = s.total_answers > 0 ? Math.round(s.correct_answers / s.total_answers * 100) : 0;
+                const pList = s.players.slice(0, 5).map((p, i) =>
+                    `<span style="white-space:nowrap;">${i < 3 ? ['&#129351;','&#129352;','&#129353;'][i] : ''} ${escapeHtml(p.nickname)} <b>${p.score}</b></span>`
                 ).join(' &middot; ');
-                return `
-                <div style="padding:8px 0; border-bottom:1px solid var(--border-color);">
+                return `<div style="padding:8px 0; border-bottom:1px solid var(--border-color); ${!hasP ? 'opacity:0.45;' : 'cursor:pointer;'}" ${hasP ? `onclick="viewSession('${escapeHtml(s.code)}')"` : ''}>
                     <div style="display:flex; justify-content:space-between; align-items:center;">
                         <span style="color:var(--text-secondary);">${date}</span>
                         <div style="display:flex; gap:4px; align-items:center;">
                             <span style="font-size:10px; padding:1px 6px; border-radius:4px; background:#64748b; color:#fff;">${escapeHtml(s.code)}</span>
-                            <button onclick="deleteSession('${escapeHtml(s.code)}', ${expId})" style="background:none; border:none; color:#ef4444; cursor:pointer; font-size:12px; padding:2px;" title="${t('admin.delete') || 'Delete'}">&#10005;</button>
+                            <button onclick="event.stopPropagation(); deleteSession('${escapeHtml(s.code)}')" style="background:none; border:none; color:#ef4444; cursor:pointer; font-size:12px; padding:2px;" title="Delete">&#10005;</button>
                         </div>
                     </div>
-                    <div style="color:var(--text-muted); margin-top:2px;">
-                        ${playerCount} player${playerCount !== 1 ? 's' : ''} &middot; ${accuracy}% ${t('admin.correct') || 'correct'}
-                    </div>
-                    ${playerCount > 0 ? `<div style="margin-top:3px; color:var(--text-secondary);">${playerList}</div>` : ''}
+                    <div style="color:var(--text-muted); margin-top:2px;">${pc} player${pc !== 1 ? 's' : ''} &middot; ${acc}% ${t('admin.correct') || 'correct'}</div>
+                    ${hasP ? `<div style="margin-top:3px; color:var(--text-secondary);">${pList}</div>` : ''}
                 </div>`;
             }).join('');
-        } catch(e) {
-            section.style.display = 'none';
         }
+        list.innerHTML = html;
     }
 
-    async function deleteSession(code, expId) {
+    function setHistoryFilter(f) { historyFilter = f; renderHistoryPanel(); }
+
+    async function deleteSession(code) {
         showConfirmDialog(t('admin.delete_session_confirm') || 'Delete this session and all its scores?', async () => {
             await fetch(`/api/rooms/${code}/history`, { method: 'DELETE' });
             toast(t('admin.session_deleted') || 'Session deleted');
-            loadHistory(expId);
+            loadHistory(historyExpId);
         });
+    }
+
+    async function bulkDeleteEmpty() {
+        const n = allSessions.filter(s => s.players.length === 0).length;
+        showConfirmDialog(`Delete ${n} empty session${n !== 1 ? 's' : ''} (0 players)?`, async () => {
+            await fetch(`/api/rooms/bulk-delete?experience_id=${historyExpId}&empty_only=true`, { method: 'DELETE' });
+            toast(`${n} empty sessions deleted`);
+            loadHistory(historyExpId);
+        });
+    }
+
+    async function bulkDeleteAll() {
+        const n = allSessions.length;
+        showConfirmDialog(`Delete ALL ${n} session${n !== 1 ? 's' : ''} and their scores? This cannot be undone.`, async () => {
+            await fetch(`/api/rooms/bulk-delete?experience_id=${historyExpId}`, { method: 'DELETE' });
+            toast(`${n} sessions deleted`);
+            loadHistory(historyExpId);
+        });
+    }
+
+    function viewSession(code) {
+        const session = allSessions.find(s => s.code === code);
+        if (!session || session.players.length === 0) return;
+        const date = session.created_at ? new Date(session.created_at).toLocaleString(undefined, {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'}) : '?';
+        const acc = session.total_answers > 0 ? Math.round(session.correct_answers / session.total_answers * 100) : 0;
+        const medals = ['&#129351;', '&#129352;', '&#129353;'];
+        const rows = session.players.map((p, i) => `
+            <tr style="border-bottom:1px solid var(--border-color);">
+                <td style="padding:8px; text-align:center; font-size:16px;">${i < 3 ? medals[i] : '#'+(i+1)}</td>
+                <td style="padding:8px; font-weight:600;">${escapeHtml(p.nickname)}</td>
+                <td style="padding:8px; text-align:right; color:#fbbf24; font-weight:700;">${p.score}</td>
+                <td style="padding:8px; text-align:right; color:var(--text-muted);">${p.correct_answers || 0}/${p.total_answers || 0}</td>
+            </tr>`).join('');
+        const modal = document.createElement('div');
+        modal.style.cssText = 'position:fixed; inset:0; z-index:9700; background:rgba(0,0,0,0.7); display:flex; align-items:center; justify-content:center;';
+        modal.innerHTML = `<div style="background:var(--bg-surface); border:1px solid var(--border-color); border-radius:16px; padding:24px; max-width:500px; width:90%; max-height:80vh; overflow-y:auto;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+                <div>
+                    <div style="font-size:18px; font-weight:700; color:#fff; font-family:var(--font-heading);">Session ${escapeHtml(code)}</div>
+                    <div style="font-size:12px; color:var(--text-muted); margin-top:2px;">${date} &middot; ${session.players.length} player${session.players.length !== 1 ? 's' : ''} &middot; ${acc}% correct</div>
+                </div>
+                <button onclick="this.closest('div[style*=fixed]').remove()" style="background:none; border:none; color:var(--text-muted); cursor:pointer; font-size:22px; padding:4px;">&#10005;</button>
+            </div>
+            <table style="width:100%; border-collapse:collapse; font-size:13px;">
+                <thead><tr style="border-bottom:2px solid var(--border-color); color:var(--text-muted); font-size:11px; text-transform:uppercase;">
+                    <th style="padding:6px 8px; text-align:center;">Rank</th>
+                    <th style="padding:6px 8px; text-align:left;">Player</th>
+                    <th style="padding:6px 8px; text-align:right;">Score</th>
+                    <th style="padding:6px 8px; text-align:right;">Correct</th>
+                </tr></thead>
+                <tbody>${rows}</tbody>
+            </table>
+        </div>`;
+        modal.addEventListener('click', (e) => { if (e.target === modal) modal.remove(); });
+        document.body.appendChild(modal);
     }
 
     function renderShowList() {
@@ -1853,6 +1945,12 @@
                             <span style="font-size:11px; color:var(--text-muted);">s</span></div>
                         </div>
                         <div class="form-row">
+                            <label>Quiz intro screen<div class="setting-desc">"Quiz Time!" announcement before each question</div></label>
+                            <div style="display:flex;align-items:center;gap:4px;"><input class="input" type="number" value="${exp.quiz_intro_duration != null ? exp.quiz_intro_duration : 3}" min="0" max="10"
+                                   onchange="updateExpSetting(${exp.id}, 'quiz_intro_duration', +this.value)" style="width:56px; padding:4px 6px; font-size:13px;">
+                            <span style="font-size:11px; color:var(--text-muted);">s</span></div>
+                        </div>
+                        <div class="form-row">
                             <label>Quiz answer time<div class="setting-desc">Seconds players have to answer</div></label>
                             <div style="display:flex;align-items:center;gap:4px;"><input class="input" type="number" value="${exp.default_question_timer}" min="5" max="120"
                                    onchange="updateExpSetting(${exp.id}, 'default_question_timer', +this.value)" style="width:56px; padding:4px 6px; font-size:13px;">
@@ -1941,9 +2039,10 @@
                     </div>
                     <!-- slide detail panel moved to exp-detail column -->
                     <div class="exp-right-footer" id="show-panel-footer" style="${hasSlides ? '' : 'display:none;'}">
-                        <span style="font-size:13px; color:var(--text-muted);" id="show-remove-count">0 selected</span>
+                        <span style="font-size:13px; color:var(--text-muted);" id="show-remove-count">Click to select &middot; Drag to lasso &middot; Shift+click for range</span>
                         <button class="picker-page-btn" onclick="showSelectAll()" style="color:var(--accent-light-blue);">Select all</button>
-                        <button class="picker-page-btn" onclick="showSelectNone()">Clear</button>
+                        <button class="picker-page-btn" onclick="showInvertSelection()">Invert</button>
+                        <button class="picker-page-btn" onclick="showSelectNone()">Deselect all</button>
                         <button class="btn btn-secondary" id="show-remove-btn" onclick="removeSelectedSlides(${exp.id})" style="margin-left:auto; color:#ef4444; display:none; min-height:32px; font-size:12px;">
                             Remove selected
                         </button>
@@ -2251,7 +2350,7 @@
         const count = showSelectedForRemoval.size;
         const label = document.getElementById('show-remove-count');
         const btn = document.getElementById('show-remove-btn');
-        if (label) label.textContent = count > 0 ? `${count} selected for removal` : 'Click to select \u00b7 Shift+click for removal';
+        if (label) label.textContent = count > 0 ? `${count} selected` : 'Click to select \u00b7 Drag to lasso \u00b7 Shift+click for range';
         if (btn) btn.style.display = count > 0 ? '' : 'none';
         if (btn && count > 0) btn.textContent = `Remove ${count} selected`;
     }
@@ -2321,6 +2420,77 @@
         document.querySelectorAll('.sg-item').forEach(el => el.classList.remove('selected-remove'));
         updateShowRemoveCount();
     }
+
+    function showInvertSelection() {
+        const exp = currentExperience;
+        if (!exp) return;
+        exp.slides.forEach(s => {
+            if (showSelectedForRemoval.has(s.id)) showSelectedForRemoval.delete(s.id);
+            else showSelectedForRemoval.add(s.id);
+        });
+        document.querySelectorAll('.sg-item').forEach(el => {
+            const did = parseInt(el.dataset.slideId);
+            el.classList.toggle('selected-remove', showSelectedForRemoval.has(did));
+        });
+        updateShowRemoveCount();
+    }
+
+    // ═══ Lasso / Rubber Band Selection ═══
+    let lassoActive = false, lassoStartX = 0, lassoStartY = 0, lassoEl = null;
+
+    document.addEventListener('mousedown', (e) => {
+        const grid = e.target.closest('.show-grid');
+        if (!grid || e.button !== 0 || e.shiftKey || e.ctrlKey || e.metaKey) return;
+        // Only start lasso if clicking on the grid background (not on an item)
+        if (e.target.closest('.sg-item')) return;
+        lassoActive = true;
+        lassoStartX = e.clientX;
+        lassoStartY = e.clientY;
+        lassoEl = document.createElement('div');
+        lassoEl.className = 'lasso-rect';
+        document.body.appendChild(lassoEl);
+        e.preventDefault();
+    });
+
+    document.addEventListener('mousemove', (e) => {
+        if (!lassoActive || !lassoEl) return;
+        const x = Math.min(e.clientX, lassoStartX);
+        const y = Math.min(e.clientY, lassoStartY);
+        const w = Math.abs(e.clientX - lassoStartX);
+        const h = Math.abs(e.clientY - lassoStartY);
+        lassoEl.style.left = x + 'px';
+        lassoEl.style.top = y + 'px';
+        lassoEl.style.width = w + 'px';
+        lassoEl.style.height = h + 'px';
+        // Highlight items inside lasso
+        if (w > 10 || h > 10) {
+            const lassoRect = { left: x, top: y, right: x + w, bottom: y + h };
+            document.querySelectorAll('.sg-item').forEach(el => {
+                const r = el.getBoundingClientRect();
+                const inside = r.left < lassoRect.right && r.right > lassoRect.left &&
+                               r.top < lassoRect.bottom && r.bottom > lassoRect.top;
+                el.classList.toggle('lasso-hover', inside);
+            });
+        }
+    });
+
+    document.addEventListener('mouseup', (e) => {
+        if (!lassoActive) return;
+        lassoActive = false;
+        const w = Math.abs(e.clientX - lassoStartX);
+        const h = Math.abs(e.clientY - lassoStartY);
+        if (lassoEl && (w > 10 || h > 10)) {
+            // Select all items inside lasso
+            document.querySelectorAll('.sg-item.lasso-hover').forEach(el => {
+                const slideId = parseInt(el.dataset.slideId);
+                showSelectedForRemoval.add(slideId);
+                el.classList.add('selected-remove');
+            });
+            updateShowRemoveCount();
+        }
+        document.querySelectorAll('.sg-item.lasso-hover').forEach(el => el.classList.remove('lasso-hover'));
+        if (lassoEl) { lassoEl.remove(); lassoEl = null; }
+    });
 
     let _silhouettePollTimer = null;
 
@@ -2937,10 +3107,20 @@
 
     // ═══ Start Game (simplified) ═══
     async function startGame(expId) {
+        showPromptDialog(
+            'Room code (leave blank for random):',
+            'e.g. FLO20',
+            async (customCode) => { await doStartGame(expId, customCode); }
+        );
+    }
+
+    async function doStartGame(expId, customCode) {
         try {
+        const body = {experience_id: expId};
+        if (customCode && customCode.trim()) body.code = customCode.trim();
         const res = await fetch('/api/rooms', {
             method: 'POST', headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({experience_id: expId})
+            body: JSON.stringify(body)
         });
         if (!res.ok) { const e = await res.json().catch(()=>({})); toast(e.detail || 'Failed to start'); return; }
         const data = await res.json();
@@ -3032,7 +3212,8 @@
             document.getElementById('gp-slide-pos').textContent = t('admin.show_finished') || 'Show finished!';
             stopFrameTimer();
         });
-        socket.on('show_leaderboard', () => {});
+        socket.on('show_leaderboard', () => { leaderboardShowing = true; });
+        socket.on('dismissed_leaderboard', () => { leaderboardShowing = false; });
     }
 
     function updatePlayerInfo(players) {
@@ -3154,7 +3335,10 @@
     function gamePrev() { socket?.emit('admin_prev', {code: currentRoomCode}); }
     function gameNext() { socket?.emit('admin_next', {code: currentRoomCode}); }
     function gameReveal() { socket?.emit('admin_reveal', {code: currentRoomCode}); }
-    function gameLeaderboard() { socket?.emit('show_leaderboard', {code: currentRoomCode}); }
+    let leaderboardShowing = false;
+    function gameLeaderboard() { socket?.emit('show_leaderboard', {code: currentRoomCode}); leaderboardShowing = true; }
+    function gameDismissLeaderboard() { socket?.emit('dismiss_leaderboard', {code: currentRoomCode}); leaderboardShowing = false; }
+    function gameToggleLeaderboard() { leaderboardShowing ? gameDismissLeaderboard() : gameLeaderboard(); }
     function gameStart() { socket?.emit('start_experience', {code: currentRoomCode}); }
 
     // Smart main button: "Show Answer" on quiz slides, "Next" otherwise
@@ -3197,7 +3381,8 @@
         switch(e.key) {
             case 'ArrowLeft': gamePrev(); e.preventDefault(); break;
             case 'ArrowRight': gameRevealOrNext(); e.preventDefault(); break;
-            case ' ': gameRevealOrNext(); e.preventDefault(); break;
+            case ' ': gamePause(); e.preventDefault(); break;
+            case 'r': case 'R': gameToggleLeaderboard(); e.preventDefault(); break;
         }
     });
 

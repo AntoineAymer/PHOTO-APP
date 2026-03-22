@@ -380,7 +380,7 @@
             <div class="join-card">
                 <div class="join-label" data-t="player.enter_code">Enter the room code</div>
                 <input id="input-code" class="input input-large" type="text"
-                       maxlength="5" placeholder="ABCDE" autocomplete="off"
+                       maxlength="20" placeholder="ABCDE" autocomplete="off"
                        autocapitalize="characters" spellcheck="false"
                        data-t-placeholder="player.code_placeholder"
                        value="{{ room_code }}">
@@ -460,6 +460,16 @@
         <div class="score-feedback">
             <div class="score-big" id="result-points"></div>
             <div class="score-total" id="result-total"></div>
+        </div>
+    </div>
+
+    <!-- SCREEN: Quiz Intro -->
+    <div id="screen-quiz-intro" class="screen">
+        <div class="centered-screen" style="gap:12px;">
+            <div style="font-size:64px;" id="p-qi-icon"></div>
+            <div style="font-family:var(--font-heading,'Ubuntu',sans-serif); font-size:32px; font-weight:800; color:#fff; text-transform:uppercase; letter-spacing:2px; text-shadow:0 2px 12px rgba(0,112,173,0.4);" id="p-qi-title"></div>
+            <div style="font-size:18px; color:rgba(255,255,255,0.8); text-align:center; max-width:80%; line-height:1.3;" id="p-qi-subtitle"></div>
+            <div style="margin-top:16px; font-size:36px; font-weight:700; color:#12ABDB; font-variant-numeric:tabular-nums;" id="p-qi-countdown"></div>
         </div>
     </div>
 
@@ -560,8 +570,8 @@
     // Join flow: Step 1
     async function goToNickname() {
         const code = document.getElementById('input-code').value.trim().toUpperCase();
-        if (code.length < 5) {
-            showError('code-error', t('player.code_error') || 'Enter a 5-character room code');
+        if (code.length < 3) {
+            showError('code-error', t('player.code_error') || 'Enter the room code');
             return;
         }
         roomCode = code;
@@ -671,6 +681,7 @@
             }
         });
 
+        socket.on('quiz_intro', (data) => { showPlayerQuizIntro(data); });
         socket.on('timer_start', (data) => { startTimer(data.duration, data.deadline); });
         socket.on('answer_submitted', () => { showSubmittedScreen(); });
         socket.on('reveal', (data) => { showReveal(data); });
@@ -723,6 +734,38 @@
     }
 
     // Watching / frame slide screen
+    let playerIntroTimer = null;
+    function showPlayerQuizIntro(data) {
+        stopTimer();
+        if (playerIntroTimer) { clearInterval(playerIntroTimer); playerIntroTimer = null; }
+        const qt = data.quiz_type || 'shadow';
+        const icons = { shadow: '\u{1F575}\u{FE0F}', missing: '\u{1F50D}', zoom: '\u{1F50E}' };
+        document.getElementById('p-qi-icon').textContent = icons[qt] || icons.shadow;
+        document.getElementById('p-qi-title').textContent =
+            t('display.quiz_intro_title') || 'Quiz Time!';
+        const subtitleKeys = {
+            shadow: 'display.quiz_intro_get_ready',
+            missing: 'display.quiz_intro_get_ready',
+            zoom: 'display.quiz_intro_get_ready',
+        };
+        document.getElementById('p-qi-subtitle').textContent =
+            t('display.quiz_intro_get_ready') || 'Get ready!';
+        let remaining = data.duration || 3;
+        const cdEl = document.getElementById('p-qi-countdown');
+        cdEl.textContent = remaining;
+        showScreen('screen-quiz-intro');
+        playerIntroTimer = setInterval(() => {
+            remaining--;
+            if (remaining > 0) {
+                cdEl.textContent = remaining;
+            } else {
+                cdEl.textContent = '';
+                clearInterval(playerIntroTimer);
+                playerIntroTimer = null;
+            }
+        }, 1000);
+    }
+
     function showWatchingScreen(slide) {
         const photo = document.getElementById('watching-photo');
         const icon = document.getElementById('watching-icon');

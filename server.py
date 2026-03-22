@@ -1097,6 +1097,7 @@ async def get_experience(exp_id: int, db=Depends(get_db)):
         "max_video_duration": exp.max_video_duration,
         "transition_effect": exp.transition_effect,
         "default_question_timer": exp.default_question_timer,
+        "quiz_intro_duration": exp.quiz_intro_duration if exp.quiz_intro_duration is not None else 3,
         "relaxed_mode": exp.relaxed_mode,
         "show_leaderboard_between": exp.show_leaderboard_between,
         "sound_enabled": exp.sound_enabled,
@@ -1130,9 +1131,10 @@ async def update_experience(exp_id: int, request: Request, db=Depends(get_db)):
     if not exp:
         raise HTTPException(404)
     for key in ["name", "language", "default_image_duration", "max_video_duration",
-                "transition_effect", "default_question_timer", "relaxed_mode",
-                "show_leaderboard_between", "sound_enabled", "leaderboard_duration",
-                "speed_scoring", "max_points", "min_points", "wrong_points"]:
+                "transition_effect", "default_question_timer", "quiz_intro_duration",
+                "relaxed_mode", "show_leaderboard_between", "sound_enabled",
+                "leaderboard_duration", "speed_scoring", "max_points", "min_points",
+                "wrong_points", "player_display_mode"]:
         if key in data:
             setattr(exp, key, data[key])
     await db.commit()
@@ -1685,6 +1687,7 @@ async def _restore_room(session, db_room):
             "show_leaderboard_between": exp.show_leaderboard_between,
             "sound_enabled": exp.sound_enabled,
             "leaderboard_duration": exp.leaderboard_duration,
+            "quiz_intro_duration": exp.quiz_intro_duration if exp.quiz_intro_duration is not None else 3,
             "player_display_mode": exp.player_display_mode or "question_and_choices",
             "speed_scoring": exp.speed_scoring if exp.speed_scoring is not None else True,
             "max_points": exp.max_points or 100,
@@ -1813,6 +1816,29 @@ async def delete_room_history(code: str, db=Depends(get_db)):
     return {"ok": True}
 
 
+@app.delete("/api/rooms/bulk-delete")
+async def bulk_delete_rooms(experience_id: int = None, empty_only: bool = False, db=Depends(get_db)):
+    """Bulk delete finished rooms. If empty_only=true, only delete rooms with 0 players."""
+    query = select(Room).where(Room.state == GameState.FINISHED)
+    if experience_id:
+        query = query.where(Room.experience_id == experience_id)
+    result = await db.execute(query)
+    rooms = result.scalars().all()
+    deleted = 0
+    for room in rooms:
+        p_result = await db.execute(select(Player).where(Player.room_id == room.id))
+        players = p_result.scalars().all()
+        if empty_only and len(players) > 0:
+            continue
+        for p in players:
+            await db.execute(delete(PlayerAnswer).where(PlayerAnswer.player_id == p.id))
+        await db.execute(delete(Player).where(Player.room_id == room.id))
+        await db.delete(room)
+        deleted += 1
+    await db.commit()
+    return {"ok": True, "deleted": deleted}
+
+
 @app.post("/api/rooms")
 async def create_room(request: Request, db=Depends(get_db)):
     data = await request.json()
@@ -1821,7 +1847,19 @@ async def create_room(request: Request, db=Depends(get_db)):
     if not exp:
         raise HTTPException(404, "Experience not found")
 
-    code = generate_room_code()
+    custom_code = data.get("code", "").strip().upper()
+    if custom_code:
+        # Validate: 3-20 chars, alphanumeric only
+        import re
+        if not re.match(r'^[A-Z0-9]{3,20}$', custom_code):
+            raise HTTPException(400, "Room code must be 3-20 alphanumeric characters")
+        # Check uniqueness
+        existing = await db.execute(select(Room).where(Room.code == custom_code, Room.state != GameState.FINISHED))
+        if existing.scalar_one_or_none():
+            raise HTTPException(409, "This room code is already in use")
+        code = custom_code
+    else:
+        code = generate_room_code()
     room = Room(code=code, experience_id=exp_id, state=GameState.LOBBY)
     db.add(room)
     await db.commit()
@@ -1858,6 +1896,7 @@ async def create_room(request: Request, db=Depends(get_db)):
             "show_leaderboard_between": exp.show_leaderboard_between,
             "sound_enabled": exp.sound_enabled,
             "leaderboard_duration": exp.leaderboard_duration,
+            "quiz_intro_duration": exp.quiz_intro_duration if exp.quiz_intro_duration is not None else 3,
             "player_display_mode": exp.player_display_mode or "question_and_choices",
             "speed_scoring": exp.speed_scoring if exp.speed_scoring is not None else True,
             "max_points": exp.max_points or 100,
@@ -2226,16 +2265,43 @@ async def advance_slide(code, direction):
     task.add_done_callback(_bg_tasks.discard)
     slide = get_current_slide_data(code)
     admin_slide = get_current_slide_admin(code)
-
     player_slide = get_current_slide_player(code)
+
+    # Quiz intro screen before game slides
+    if slide and slide["slide_type"] == "game":
+        intro_dur = room.get("experience", {}).get("quiz_intro_duration", 3)
+        if intro_dur > 0:
+            room["intro_start_time"] = time.time()
+            intro_data = {
+                "quiz_type": slide.get("quiz_type") or "shadow",
+                "duration": intro_dur,
+                "question_index": sum(1 for s in room["slides"][:new_idx + 1] if s["slide_type"] == "game"),
+            }
+            await sio.emit("quiz_intro", intro_data, room=f"display_{code}")
+            await sio.emit("quiz_intro", intro_data, room=f"player_{code}")
+            await sio.emit("slide_changed", {"slide": admin_slide}, room=f"admin_{code}")
+            await sio.emit("player_list", get_player_list(code), room=f"admin_{code}")
+
+            async def _after_intro():
+                await asyncio.sleep(intro_dur)
+                if active_rooms.get(code) is not room:
+                    return
+                if room["current_slide_index"] != new_idx:
+                    return
+                room.pop("intro_start_time", None)
+                await sio.emit("slide_changed", {"slide": slide}, room=f"display_{code}")
+                await sio.emit("slide_changed", {"slide": player_slide}, room=f"player_{code}")
+                await start_question_timer(code)
+
+            room["timer_task"] = asyncio.create_task(_after_intro())
+            return
+
     await sio.emit("slide_changed", {"slide": slide}, room=f"display_{code}")
     await sio.emit("slide_changed", {"slide": admin_slide}, room=f"admin_{code}")
     await sio.emit("slide_changed", {"slide": player_slide}, room=f"player_{code}")
     await sio.emit("player_list", get_player_list(code), room=f"admin_{code}")
 
-    if slide and slide["slide_type"] == "game":
-        await start_question_timer(code)
-    elif slide and slide["slide_type"] == "frame":
+    if slide and slide["slide_type"] == "frame":
         duration = slide.get("display_duration") or room.get("experience", {}).get("default_image_duration", 8)
         await start_frame_timer(code, duration)
 
@@ -2355,7 +2421,12 @@ async def admin_pause(sid, data):
         room["timer_task"].cancel()
         room["timer_task"] = None
     # Save remaining timer time for resume
-    if room.get("question_start_time") and not room["experience"].get("relaxed_mode"):
+    if room.get("intro_start_time"):
+        # Paused during quiz intro
+        elapsed = time.time() - room["intro_start_time"]
+        intro_dur = room["experience"].get("quiz_intro_duration", 3)
+        room["paused_intro_remaining"] = max(0, intro_dur - elapsed)
+    elif room.get("question_start_time") and not room["experience"].get("relaxed_mode"):
         elapsed = time.time() - room["question_start_time"]
         idx = room["current_slide_index"]
         if idx < len(room["slides"]):
@@ -2374,6 +2445,32 @@ async def admin_resume(sid, data):
     if not room:
         return
     room["state"] = "playing"
+    # Paused during quiz intro — resume the intro countdown
+    intro_remaining = room.pop("paused_intro_remaining", None)
+    if intro_remaining is not None and intro_remaining > 0:
+        idx = room["current_slide_index"]
+        slide = get_current_slide_data(code)
+        player_slide = get_current_slide_player(code)
+        room["intro_start_time"] = time.time()
+
+        async def _resume_intro():
+            await asyncio.sleep(intro_remaining)
+            if active_rooms.get(code) is not room or room["state"] != "playing":
+                return
+            if room["current_slide_index"] != idx:
+                return
+            room.pop("intro_start_time", None)
+            await sio.emit("slide_changed", {"slide": slide}, room=f"display_{code}")
+            await sio.emit("slide_changed", {"slide": player_slide}, room=f"player_{code}")
+            await start_question_timer(code)
+
+        if room.get("timer_task"):
+            room["timer_task"].cancel()
+        room["timer_task"] = asyncio.create_task(_resume_intro())
+        await sio.emit("resumed", {}, room=f"display_{code}")
+        await sio.emit("resumed", {}, room=f"player_{code}")
+        return
+
     # Restart timer with remaining time if we paused during a question
     remaining = room.pop("paused_remaining", None)
     if remaining and remaining > 0:
@@ -2407,6 +2504,15 @@ async def show_leaderboard(sid, data):
     room = active_rooms.get(code)
     if not room:
         return
+    # Save remaining timer for restore on dismiss
+    if room.get("question_start_time") and not room["experience"].get("relaxed_mode"):
+        elapsed = time.time() - room["question_start_time"]
+        idx = room["current_slide_index"]
+        if idx < len(room["slides"]):
+            slide = room["slides"][idx]
+            timer_duration = slide.get("question_timer") or room["experience"]["default_question_timer"]
+            room["leaderboard_remaining"] = max(0, timer_duration - elapsed)
+    room["pre_leaderboard_state"] = room.get("state", "playing")
     # Cancel any existing timer
     if room.get("timer_task"):
         room["timer_task"].cancel()
@@ -2435,6 +2541,47 @@ async def show_leaderboard(sid, data):
             await advance_slide(code, 1)
 
     room["timer_task"] = asyncio.create_task(leaderboard_auto_advance())
+
+@sio.event
+async def dismiss_leaderboard(sid, data):
+    """Dismiss the leaderboard overlay and resume the current slide."""
+    if not is_admin(sid): return
+    code = data.get("code")
+    room = active_rooms.get(code)
+    if not room:
+        return
+    # Cancel auto-advance from leaderboard
+    if room.get("timer_task"):
+        room["timer_task"].cancel()
+        room["timer_task"] = None
+    room["state"] = room.pop("pre_leaderboard_state", "playing")
+    # Re-emit current slide to all screens so they go back to what was showing
+    idx = room["current_slide_index"]
+    if idx < len(room["slides"]):
+        slide = room["slides"][idx]
+        await sio.emit("slide_changed", {"slide": slide, "index": idx, "total": len(room["slides"])}, room=f"display_{code}")
+        await sio.emit("slide_changed", {"slide": slide, "index": idx, "total": len(room["slides"])}, room=f"player_{code}")
+        await sio.emit("slide_changed", {"slide": slide, "index": idx, "total": len(room["slides"])}, room=f"admin_{code}")
+    # Restore timer if there was remaining time
+    remaining = room.pop("leaderboard_remaining", None)
+    if remaining and remaining > 0 and room["state"] == "playing":
+        if idx < len(room["slides"]) and room["slides"][idx]["slide_type"] == "game":
+            room["question_start_time"] = time.time()
+            deadline = int((room["question_start_time"] + remaining) * 1000)
+            tp = {"duration": remaining, "deadline": deadline}
+            await sio.emit("timer_start", tp, room=f"display_{code}")
+            await sio.emit("timer_start", tp, room=f"player_{code}")
+            await sio.emit("timer_start", tp, room=f"admin_{code}")
+
+            async def timer_expired():
+                await asyncio.sleep(remaining)
+                if active_rooms.get(code) and room["state"] == "playing":
+                    current_slide = room["slides"][room["current_slide_index"]]
+                    if current_slide["slide_type"] == "game":
+                        await do_reveal(code)
+
+            room["timer_task"] = asyncio.create_task(timer_expired())
+    await sio.emit("dismissed_leaderboard", {}, room=f"admin_{code}")
 
 @sio.event
 async def remove_player(sid, data):
