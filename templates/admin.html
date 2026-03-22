@@ -534,6 +534,14 @@
         width: 1px; background: rgba(255,255,255,0.35);
         transform: translateX(-0.5px); pointer-events: none;
     }
+    .sg-pair-label {
+        position: absolute; bottom: 22px; font-size: 8px; font-weight: 700;
+        color: rgba(255,255,255,0.8); background: rgba(0,0,0,0.5);
+        padding: 1px 4px; border-radius: 3px; pointer-events: none; text-transform: uppercase; letter-spacing: 0.3px;
+    }
+    .sg-pair-label-left { left: 4px; }
+    .sg-pair-label-right { right: 4px;
+    }
     .sg-generating {
         position: absolute; inset: 0; background: rgba(0,0,0,0.6);
         display: flex; flex-direction: column; align-items: center; justify-content: center;
@@ -2705,7 +2713,9 @@
                             <div class="sg-pair-wrap">
                                 <img src="${s.media_thumbnail}" alt="" loading="lazy">
                                 <div class="sg-pair-divider"></div>
-                                <img src="${s.silhouette_url}" alt="" loading="lazy">
+                                <img src="${s.silhouette_url}?t=${s.id}" alt="" loading="lazy">
+                                <span class="sg-pair-label sg-pair-label-left">Original</span>
+                                <span class="sg-pair-label sg-pair-label-right">${s.quiz_type === 'missing' ? 'Missing' : s.quiz_type === 'zoom' ? 'Zoom' : 'Shadow'}</span>
                             </div>
                             ${badge ? `<span class="show-badge">${badge}</span>` : ''}
                             <div class="show-name">${escapeHtml(s.media_filename)}</div>
@@ -2767,12 +2777,19 @@
         showConfirmDialog(
             `Remove ${ids.length} item${ids.length > 1 ? 's' : ''} from this show? (Media stays in your library)`,
             async () => {
+                const scrollEl = document.getElementById('show-panel-body');
+                const savedScroll = scrollEl ? scrollEl.scrollTop : 0;
                 await fetch(`/api/experiences/${expId}/bulk-remove`, {
                     method: 'POST', headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify({slide_ids: ids})
                 });
                 showSelectedForRemoval.clear();
+                try { localStorage.removeItem(`photoframe_last_slide_${expId}`); } catch(e) {}
                 await openExperience(expId);
+                requestAnimationFrame(() => {
+                    const el = document.getElementById('show-panel-body');
+                    if (el) el.scrollTop = savedScroll;
+                });
             }
         );
     }
@@ -3635,6 +3652,9 @@
         showConfirmDialog(`Remove "${name}" from this show?`, async () => {
             const res = await fetch(`/api/slides/${slideId}`, { method: 'DELETE' });
             if (res.ok) {
+                // Save scroll position before re-render
+                const scrollEl = document.getElementById('show-panel-body');
+                const savedScroll = scrollEl ? scrollEl.scrollTop : 0;
                 // Animate removal
                 const el = document.querySelector(`.sg-item[data-slide-id="${slideId}"]`);
                 if (el) {
@@ -3643,9 +3663,15 @@
                     el.style.transform = 'scale(0.8)';
                 }
                 if (activeSlideId === slideId) closeSlideDetail();
-                // Refresh after animation
+                // Refresh after animation, restore scroll
                 setTimeout(async () => {
+                    // Remove last-slide memory so it doesn't scroll to deleted slide
+                    try { localStorage.removeItem(`photoframe_last_slide_${currentExperience.id}`); } catch(e) {}
                     await openExperience(currentExperience.id);
+                    requestAnimationFrame(() => {
+                        const el = document.getElementById('show-panel-body');
+                        if (el) el.scrollTop = savedScroll;
+                    });
                 }, 280);
                 toast(`Removed ${name}`);
             } else {
