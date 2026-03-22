@@ -103,6 +103,22 @@
         font-style: italic;
         text-shadow: 0 2px 8px rgba(0,0,0,0.3);
     }
+    .lobby-room-code {
+        font-family: var(--font-heading);
+        font-size: 56px;
+        font-weight: 900;
+        color: #12ABDB;
+        letter-spacing: 6px;
+        text-align: center;
+        text-shadow: 0 2px 12px rgba(18,171,219,0.3);
+    }
+    .lobby-room-code-label {
+        font-size: 16px;
+        color: rgba(255,255,255,0.6);
+        text-transform: uppercase;
+        letter-spacing: 2px;
+        margin-bottom: -12px;
+    }
     .lobby-status {
         font-family: var(--font-heading);
         font-size: 48px;
@@ -557,6 +573,8 @@
                 <div class="lobby-qr-label" id="lobby-scan-text" data-t="display.scan_to_join">Scan to join</div>
             </div>
             <div class="lobby-info-panel">
+                <div class="lobby-room-code-label" data-t="display.enter_code">& enter code</div>
+                <div class="lobby-room-code" id="lobby-room-code"></div>
                 <div class="lobby-status" id="lobby-status-text" data-t="display.beginning_soon">Beginning soon.</div>
                 <div class="lobby-player-count" id="lobby-players">0 players joined</div>
                 <div id="lobby-player-names" class="lobby-player-names"></div>
@@ -797,6 +815,9 @@
             }
         }
         roomCode = roomCode || data.code;
+        if (roomCode) {
+            document.getElementById('lobby-room-code').textContent = roomCode;
+        }
 
         if (data.experience?.name) {
             document.getElementById('lobby-title').textContent = data.experience.name;
