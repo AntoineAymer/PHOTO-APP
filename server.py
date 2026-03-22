@@ -795,6 +795,25 @@ async def fix_media_date(media_id: int, db=Depends(get_db)):
         return {"new_date": new_date.isoformat(), "old_year": old_year, "changed": changed, "source": "gemini"}
     return {"new_date": None, "old_year": old_year, "changed": False}
 
+@app.post("/api/media/{media_id}/set-date")
+async def set_media_date(media_id: int, request: Request, db=Depends(get_db)):
+    """Manually set the date for a media item. Expects JSON: {date: "YYYY-MM-DD"}."""
+    media = await db.get(Media, media_id)
+    if not media:
+        raise HTTPException(404)
+    data = await request.json()
+    date_str = data.get("date", "").strip()
+    if not date_str:
+        raise HTTPException(400, "date is required (YYYY-MM-DD)")
+    try:
+        new_date = datetime.fromisoformat(date_str)
+    except ValueError:
+        raise HTTPException(400, "Invalid date format, use YYYY-MM-DD")
+    old_year = media.exif_date.strftime("%Y") if media.exif_date else None
+    media.exif_date = new_date
+    await db.commit()
+    return {"new_date": new_date.isoformat(), "old_year": old_year, "changed": True, "source": "manual"}
+
 @app.post("/api/media/repair-dates")
 async def repair_all_dates(db=Depends(get_db)):
     """Re-read EXIF dates from all media files and fix corrupted DB entries."""

@@ -2401,7 +2401,8 @@
                                 <div id="sdp-type-badge"></div>
                             </div>
                             <div style="display:flex; align-items:center; gap:6px; margin-bottom:8px; flex-wrap:wrap;">
-                                <span id="sdp-date" style="font-size:12px; color:var(--text-muted);"></span>
+                                <span id="sdp-date" style="font-size:12px; color:var(--text-muted); cursor:pointer;" onclick="editSlideDate()" title="Click to edit date"></span>
+                                <input type="date" id="sdp-date-input" style="display:none; font-size:12px; padding:2px 6px; border-radius:4px; border:1px solid var(--border-input); background:var(--bg-input); color:var(--text-primary);" onchange="saveSlideDate(this.value)" onblur="cancelDateEdit()">
                                 <button class="btn btn-secondary" id="sdp-btn-fix-date" onclick="fixSlideDate()" style="padding:2px 8px; font-size:10px; min-height:24px;">Fix date</button>
                                 <div style="flex:1;"></div>
                                 <button class="btn btn-secondary" onclick="viewMediaFull()" style="padding:4px 10px; font-size:11px; min-height:32px;" title="View full size">&#128269; View full</button>
@@ -3127,6 +3128,55 @@
 
         // Reset quiz form
         cancelQuizPanel();
+    }
+
+    function editSlideDate() {
+        const dateSpan = document.getElementById('sdp-date');
+        const dateInput = document.getElementById('sdp-date-input');
+        if (!activeSlideId || !currentExperience) return;
+        const slide = currentExperience.slides.find(s => s.id === activeSlideId);
+        if (!slide) return;
+        dateSpan.style.display = 'none';
+        dateInput.style.display = '';
+        dateInput.value = slide.exif_date ? slide.exif_date.substring(0, 10) : '';
+        dateInput.focus();
+    }
+
+    function cancelDateEdit() {
+        // Small delay so onchange fires before onblur hides the input
+        setTimeout(() => {
+            document.getElementById('sdp-date').style.display = '';
+            document.getElementById('sdp-date-input').style.display = 'none';
+        }, 200);
+    }
+
+    async function saveSlideDate(val) {
+        if (!val || !activeSlideId || !currentExperience) return;
+        const slide = currentExperience.slides.find(s => s.id === activeSlideId);
+        if (!slide) return;
+        const status = document.getElementById('sdp-date-status');
+        try {
+            const res = await fetch(`/api/media/${slide.media_id}/set-date`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ date: val })
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.detail || 'Failed');
+            slide.exif_date = data.new_date;
+            const d = new Date(data.new_date);
+            document.getElementById('sdp-date').textContent = d.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
+            document.getElementById('sdp-date').style.display = '';
+            document.getElementById('sdp-date-input').style.display = 'none';
+            status.style.display = '';
+            status.textContent = `Date set manually: ${data.old_year || 'unknown'} → ${val.substring(0,4)}`;
+            status.style.color = '#4caf50';
+            filterShowGrid();
+        } catch (e) {
+            status.style.display = '';
+            status.textContent = `Error: ${e.message}`;
+            status.style.color = '#ef4444';
+        }
     }
 
     async function fixSlideDate() {
