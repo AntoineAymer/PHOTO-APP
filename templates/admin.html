@@ -4210,7 +4210,7 @@
             updateOverlayButtons();
             document.getElementById('btn-main-label').textContent = t('admin.reveal') || 'Show Answer';
         } else if (slide.media_type === 'video') {
-            preview.innerHTML = `<video src="${slide.media_url}" muted playsinline style="max-width:100%; max-height:100%; border-radius:8px;"></video>`;
+            preview.innerHTML = `<video src="${slide.media_url}" autoplay controls playsinline style="max-width:100%; max-height:100%; border-radius:8px;"></video>`;
             stats.style.display = 'none';
             document.getElementById('gp-overlay-toggles').style.display = 'none';
             document.getElementById('btn-main-label').textContent = t('admin.next') || 'Next';
