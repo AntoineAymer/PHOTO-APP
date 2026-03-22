@@ -2216,11 +2216,14 @@
         loadHistory(id);
 
         // Restore scroll position or scroll to specific slide
+        const lastSlideId = restoreSlideId || (() => {
+            try { return parseInt(localStorage.getItem(`photoframe_last_slide_${id}`)) || null; } catch(e) { return null; }
+        })();
         requestAnimationFrame(() => {
             const newScrollEl = document.getElementById('show-panel-body');
             if (!newScrollEl) return;
-            if (restoreSlideId) {
-                const slideEl = document.querySelector(`.sg-item[data-slide-id="${restoreSlideId}"]`);
+            if (lastSlideId) {
+                const slideEl = document.querySelector(`.sg-item[data-slide-id="${lastSlideId}"]`);
                 if (slideEl) { slideEl.scrollIntoView({ block: 'center', behavior: 'instant' }); return; }
             }
             newScrollEl.scrollTop = savedScroll;
@@ -2919,6 +2922,11 @@
         if (el) el.classList.add('active-slide');
 
         activeSlideId = slideId;
+
+        // Remember last accessed slide for this experience
+        if (currentExperience) {
+            try { localStorage.setItem(`photoframe_last_slide_${currentExperience.id}`, slideId); } catch(e) {}
+        }
 
         // Quiz number badge
         const quizNumEl = document.getElementById('sdp-quiz-number');
