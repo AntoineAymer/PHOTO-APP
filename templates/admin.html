@@ -2492,15 +2492,15 @@
                         <div id="sdp-gemini-top" style="margin-bottom:10px; padding:8px 10px; border:1px solid rgba(18,171,219,0.25); border-radius:8px; background:rgba(18,171,219,0.04);">
                             <div id="sdp-engine-label" style="font-size:10px; font-weight:700; color:var(--text-muted); margin-bottom:5px; text-transform:uppercase; letter-spacing:0.5px;">Engine</div>
                             <div style="display:flex; border-radius:6px; overflow:hidden; border:1px solid var(--border-color); font-size:12px; font-weight:700;">
-                                <button type="button" id="sdp-engine-local-btn" onclick="setEngine('local')" style="flex:1; padding:8px 6px; border:none; cursor:pointer; text-align:center; transition:all 0.15s; background:#1e5631; color:#34d399;">
+                                <button type="button" id="sdp-engine-local-btn" onclick="setEngine('local')" style="flex:1; padding:8px 6px; border:none; cursor:pointer; text-align:center; transition:all 0.15s; background:transparent; color:var(--text-muted);">
                                     &#9881; Local<br><span style="font-size:9px; font-weight:400;">Fast &middot; 1-2 people</span>
                                 </button>
-                                <button type="button" id="sdp-engine-gemini-btn" onclick="setEngine('gemini')" style="flex:1; padding:8px 6px; border:none; cursor:pointer; text-align:center; transition:all 0.15s; background:transparent; color:var(--text-muted);">
+                                <button type="button" id="sdp-engine-gemini-btn" onclick="setEngine('gemini')" style="flex:1; padding:8px 6px; border:none; cursor:pointer; text-align:center; transition:all 0.15s; background:#1a3a5c; color:#12ABDB;">
                                     &#10024; Gemini AI<br><span style="font-size:9px; font-weight:400;">Names people &middot; groups</span>
                                 </button>
                             </div>
-                            <input type="hidden" id="sdp-use-gemini-top" value="false">
-                            <input type="hidden" id="sdp-use-gemini-analyze" value="false">
+                            <input type="hidden" id="sdp-use-gemini-top" value="true">
+                            <input type="hidden" id="sdp-use-gemini-analyze" value="true">
                         </div>
                         <!-- Create quiz buttons -->
                         <div id="sdp-quiz-btns" style="display:flex; gap:6px; flex-wrap:wrap; margin-bottom:10px;">
