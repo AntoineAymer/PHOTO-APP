@@ -971,14 +971,21 @@ def estimate_photo_year_gemini(file_path: str) -> int | None:
         return None
 
 
-def analyze_people_gemini(file_path: str) -> dict | None:
+def analyze_people_gemini(file_path: str, lang: str = "en") -> dict | None:
     """Use Gemini to identify people in a photo and suggest quiz answers.
     Returns {"people": [...], "quiz": {"correct": str, "wrong": [str, str]}} or None."""
     import json
 
+    lang_instruction = ""
+    if lang and lang != "en":
+        lang_names = {"fr": "French", "es": "Spanish", "de": "German", "it": "Italian", "pt": "Portuguese"}
+        lang_name = lang_names.get(lang, lang)
+        lang_instruction = f"IMPORTANT: All descriptions, names, and quiz text MUST be in {lang_name}. "
+
     try:
         img_b64 = _prepare_image_for_gemini(file_path, max_dim=768, quality=80)
         prompt = (
+            f"{lang_instruction}"
             "Analyze this photo for a party guessing game. "
             "List each person visible with a short description (age range, clothing, position). "
             "For each person, provide their approximate center position as percentage of image "

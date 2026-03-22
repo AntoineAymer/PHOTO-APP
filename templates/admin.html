@@ -2289,19 +2289,19 @@
                         </div>
                         <div class="form-row">
                             <label>Correct answer<div class="setting-desc">Max points (or flat if speed off)</div></label>
-                            <div style="display:flex;align-items:center;gap:4px;"><input class="input" type="number" value="${exp.max_points || 100}" min="1" max="1000"
+                            <div style="display:flex;align-items:center;gap:4px;"><input class="input" type="number" value="${exp.max_points != null ? exp.max_points : 10}" min="1" max="1000"
                                    onchange="updateExpSetting(${exp.id}, 'max_points', +this.value)" style="width:56px; padding:4px 6px; font-size:13px;">
                             <span style="font-size:11px; color:var(--text-muted);">pts</span></div>
                         </div>
                         <div class="form-row">
                             <label>Min correct<div class="setting-desc">Slowest correct answer (speed mode)</div></label>
-                            <div style="display:flex;align-items:center;gap:4px;"><input class="input" type="number" value="${exp.min_points != null ? exp.min_points : 10}" min="0" max="999"
+                            <div style="display:flex;align-items:center;gap:4px;"><input class="input" type="number" value="${exp.min_points != null ? exp.min_points : 0}" min="0" max="999"
                                    onchange="updateExpSetting(${exp.id}, 'min_points', +this.value)" style="width:56px; padding:4px 6px; font-size:13px;">
                             <span style="font-size:11px; color:var(--text-muted);">pts</span></div>
                         </div>
                         <div class="form-row">
                             <label>Wrong answer<div class="setting-desc">0 = no penalty, negative = deduct</div></label>
-                            <div style="display:flex;align-items:center;gap:4px;"><input class="input" type="number" value="${exp.wrong_points || 0}" min="-100" max="0"
+                            <div style="display:flex;align-items:center;gap:4px;"><input class="input" type="number" value="${exp.wrong_points != null ? exp.wrong_points : -10}" min="-100" max="0"
                                    onchange="updateExpSetting(${exp.id}, 'wrong_points', +this.value)" style="width:56px; padding:4px 6px; font-size:13px;">
                             <span style="font-size:11px; color:var(--text-muted);">pts</span></div>
                         </div>
@@ -2400,15 +2400,15 @@
                         <div id="sdp-quiz-review" style="display:none; margin-bottom:12px;">
                             <!-- Remove quiz — top action -->
                             <div style="display:flex; align-items:center; gap:8px; margin-bottom:10px;">
-                                <div style="font-size:14px; font-weight:700; color:var(--accent-light-blue); font-family:var(--font-heading);">Quiz Settings</div>
+                                <div id="sdp-quiz-settings-label" style="font-size:14px; font-weight:700; color:var(--accent-light-blue); font-family:var(--font-heading);">Quiz Settings</div>
                                 <div style="flex:1;"></div>
                                 <button class="btn btn-secondary" onclick="removeQuizFromSlide()" id="sdp-btn-remove-quiz" style="padding:4px 12px; font-size:11px; min-height:28px; color:#ef4444; border-color:rgba(239,68,68,0.3);">
-                                    &#128465; Remove Quiz
+                                    &#128465; <span id="sdp-remove-quiz-label">Remove Quiz</span>
                                 </button>
                             </div>
                             <!-- Answers edit -->
                             <div style="padding:10px 12px; background:var(--bg-elevated, #334155); border-radius:8px; font-size:12px; margin-bottom:10px;">
-                                <div style="font-size:11px; color:var(--text-muted); margin-bottom:8px;">Edit names below. Order will be randomised during the game.</div>
+                                <div id="sdp-edit-hint-label" style="font-size:11px; color:var(--text-muted); margin-bottom:8px;">Edit names below. Order will be randomised during the game.</div>
                                 <div style="display:flex; gap:6px; margin-bottom:6px; align-items:center;">
                                     <span style="color:#4caf50; font-weight:700; width:20px; font-size:14px;">&#9733;</span>
                                     <input id="sdp-edit-a" class="input" style="flex:1; font-size:13px; min-height:34px; border-left:3px solid #4caf50;" placeholder="Correct name">
@@ -2421,12 +2421,22 @@
                                     <span style="color:#ef4444; font-weight:600; width:20px; font-size:14px;">&#10007;</span>
                                     <input id="sdp-edit-c" class="input" style="flex:1; font-size:13px; min-height:34px; border-left:3px solid #ef4444;" placeholder="Wrong name">
                                 </div>
+                                <div id="sdp-edit-d-wrapper" style="display:none; margin-bottom:6px; padding:6px 8px; border:1px solid rgba(255,167,38,0.3); border-radius:6px; background:rgba(255,167,38,0.05);">
+                                    <label style="display:flex; align-items:center; gap:6px; cursor:pointer; margin-bottom:4px;">
+                                        <input type="checkbox" id="sdp-edit-d-enabled" onchange="toggleEdit4th()" style="width:16px; height:16px; accent-color:#ffa726; cursor:pointer;">
+                                        <span style="font-size:11px; font-weight:600; color:#ffa726;">4th answer (decoy trap)</span>
+                                    </label>
+                                    <div id="sdp-edit-d-row" style="display:none; gap:6px; align-items:center;">
+                                        <span style="color:#ffa726; font-weight:600; width:20px; font-size:14px;">&#10007;</span>
+                                        <input id="sdp-edit-d" class="input" style="flex:1; font-size:13px; min-height:34px; border-left:3px solid #ffa726;" placeholder="e.g. Nobody is missing">
+                                    </div>
+                                </div>
                                 <button class="btn btn-primary" onclick="saveQuizEdits()" style="padding:5px 14px; font-size:11px; min-height:30px; margin-top:4px;">Save changes</button>
                                 <div id="sdp-edit-status" style="margin-top:4px; font-size:11px;"></div>
                             </div>
                             <!-- Regenerate image -->
                             <div style="padding:10px 12px; border:1px solid var(--border-color); border-radius:8px; background:rgba(0,0,0,0.1);">
-                                <div style="font-size:12px; font-weight:700; color:var(--text-muted); margin-bottom:6px;">Regenerate quiz image</div>
+                                <div id="sdp-regen-title-label" style="font-size:12px; font-weight:700; color:var(--text-muted); margin-bottom:6px;">Regenerate quiz image</div>
                                 <div style="display:flex; gap:6px;">
                                     <button class="btn btn-secondary" onclick="regenerateWithEngine('local')" style="flex:1; padding:6px 8px; font-size:11px; min-height:34px;">
                                         &#9881; Local
@@ -2442,7 +2452,7 @@
                         <!-- ═══ SECTION 4: Quiz creation (shown when no quiz) ═══ -->
                         <!-- Engine toggle -->
                         <div id="sdp-gemini-top" style="margin-bottom:10px; padding:8px 10px; border:1px solid rgba(18,171,219,0.25); border-radius:8px; background:rgba(18,171,219,0.04);">
-                            <div style="font-size:10px; font-weight:700; color:var(--text-muted); margin-bottom:5px; text-transform:uppercase; letter-spacing:0.5px;">Engine</div>
+                            <div id="sdp-engine-label" style="font-size:10px; font-weight:700; color:var(--text-muted); margin-bottom:5px; text-transform:uppercase; letter-spacing:0.5px;">Engine</div>
                             <div style="display:flex; border-radius:6px; overflow:hidden; border:1px solid var(--border-color); font-size:12px; font-weight:700;">
                                 <button type="button" id="sdp-engine-local-btn" onclick="setEngine('local')" style="flex:1; padding:8px 6px; border:none; cursor:pointer; text-align:center; transition:all 0.15s; background:#1e5631; color:#34d399;">
                                     &#9881; Local<br><span style="font-size:9px; font-weight:400;">Fast &middot; 1-2 people</span>
@@ -2469,7 +2479,7 @@
                         <!-- Quiz form -->
                         <div id="sdp-quiz-form" style="display:none;">
                             <div id="sdp-quiz-loading" style="display:none; padding:16px; text-align:center;">
-                                <span style="font-size:20px;">&#9881;</span> Analyzing...
+                                <span style="font-size:20px;">&#9881;</span> <span class="i18n-quiz-analyzing">Analyzing...</span>
                             </div>
                             <div id="sdp-quiz-fields" style="display:none;">
                                 <div style="font-size:12px; color:var(--text-muted); margin-bottom:8px;" id="sdp-people-desc"></div>
@@ -2480,13 +2490,13 @@
                                 </div>
                                 <!-- Step 2: Name the answer choices -->
                                 <div style="padding:10px 12px; background:rgba(255,255,255,0.03); border-radius:8px; border:1px solid var(--border-color, #334155);">
-                                    <div style="font-size:13px; font-weight:700; color:var(--accent-light-blue); margin-bottom:4px;">What players will see</div>
+                                    <div id="sdp-players-see-label" style="font-size:13px; font-weight:700; color:var(--accent-light-blue); margin-bottom:4px;">What players will see</div>
                                     <div style="font-size:11px; color:var(--text-muted); margin-bottom:10px;" id="sdp-answer-hint">Type 3 names. The order A B C will be randomised during the game.</div>
                                     <div class="sdp-answer-row" id="sdp-row-a" style="display:flex; gap:6px; margin-bottom:8px; align-items:center;">
                                         <span style="color:#4caf50; font-weight:700; width:20px; font-size:14px;">&#9733;</span>
                                         <input id="sdp-ans-a" class="input" placeholder="Name of the person above" style="flex:1; font-size:14px; min-height:40px; border-left:3px solid #4caf50;" id="sdp-ans-a-label">
                                     </div>
-                                    <div style="font-size:11px; color:#4caf50; margin:-4px 0 8px 26px;">&#8593; This is the correct answer</div>
+                                    <div id="sdp-correct-hint" style="font-size:11px; color:#4caf50; margin:-4px 0 8px 26px;">&#8593; This is the correct answer</div>
                                     <div class="sdp-answer-row" id="sdp-row-b" style="display:flex; gap:6px; margin-bottom:8px; align-items:center;">
                                         <span style="color:#ef4444; width:20px; font-weight:600; font-size:14px;">&#10007;</span>
                                         <input id="sdp-ans-b" class="input" placeholder="Wrong name (decoy)" style="flex:1; font-size:14px; min-height:40px; border-left:3px solid #ef4444;">
@@ -2507,8 +2517,8 @@
                                     </div>
                                 </div>
                                 <div style="display:flex; gap:8px; margin-top:4px; align-items:center;">
-                                    <button class="btn btn-primary" onclick="confirmQuizOnSlide()" style="min-height:38px; padding:8px 16px; font-size:13px;">Create Quiz</button>
-                                    <button class="btn btn-secondary" onclick="cancelQuizPanel()" style="min-height:38px; font-size:13px;">Cancel</button>
+                                    <button class="btn btn-primary" onclick="confirmQuizOnSlide()" id="sdp-create-quiz-btn" style="min-height:38px; padding:8px 16px; font-size:13px;">Create Quiz</button>
+                                    <button class="btn btn-secondary" onclick="cancelQuizPanel()" id="sdp-cancel-quiz-btn" style="min-height:38px; font-size:13px;">Cancel</button>
                                     <label id="sdp-gemini-toggle" style="display:none; margin-left:auto; font-size:12px; color:var(--accent-light-blue); cursor:pointer; white-space:nowrap; padding:4px 8px; border:1px solid var(--border-color); border-radius:6px; background:rgba(18,171,219,0.08);">
                                         <input type="checkbox" id="sdp-use-gemini" style="margin-right:5px; transform:scale(1.2); vertical-align:middle;">
                                         ✨ Use Gemini AI
@@ -2871,6 +2881,43 @@
 
         activeSlideId = slideId;
 
+        // Localize static quiz panel labels
+        const _s = (id, key, fallback) => { const el = document.getElementById(id); if (el) el.textContent = t(key) || fallback; };
+        _s('sdp-quiz-settings-label', 'admin.quiz_settings', 'Quiz Settings');
+        _s('sdp-remove-quiz-label', 'admin.quiz_remove', 'Remove Quiz');
+        _s('sdp-edit-hint-label', 'admin.quiz_edit_hint', 'Edit names below. Order will be randomised during the game.');
+        _s('sdp-regen-title-label', 'admin.quiz_regen_title', 'Regenerate quiz image');
+        _s('sdp-engine-label', 'admin.engine', 'Engine');
+        _s('sdp-players-see-label', 'admin.quiz_what_players_see', 'What players will see');
+        const correctHint = document.getElementById('sdp-correct-hint');
+        if (correctHint) correctHint.innerHTML = `&#8593; ${t('admin.quiz_this_correct') || 'This is the correct answer'}`;
+        const createBtn = document.getElementById('sdp-create-quiz-btn');
+        if (createBtn) createBtn.textContent = t('admin.create_quiz') || 'Create Quiz';
+        const cancelBtn = document.getElementById('sdp-cancel-quiz-btn');
+        if (cancelBtn) cancelBtn.textContent = t('admin.cancel') || 'Cancel';
+        const saveBtn = document.querySelector('#sdp-quiz-review .btn-primary');
+        if (saveBtn) saveBtn.textContent = t('admin.quiz_save_changes') || 'Save changes';
+        // Engine button labels
+        const localBtn = document.getElementById('sdp-engine-local-btn');
+        if (localBtn) localBtn.innerHTML = `&#9881; ${t('admin.engine_local') || 'Local'}<br><span style="font-size:9px; font-weight:400;">${t('admin.engine_local_desc') || 'Fast · 1-2 people'}</span>`;
+        const geminiBtn = document.getElementById('sdp-engine-gemini-btn');
+        if (geminiBtn) geminiBtn.innerHTML = `&#10024; ${t('admin.engine_gemini') || 'Gemini AI'}<br><span style="font-size:9px; font-weight:400;">${t('admin.engine_gemini_desc') || 'Names people · groups'}</span>`;
+        // Quiz type buttons
+        const shadowBtn = document.getElementById('sdp-btn-shadow');
+        if (shadowBtn) shadowBtn.innerHTML = `&#9899; ${t('admin.quiz_shadow') || 'Shadow'}`;
+        const missingBtn = document.getElementById('sdp-btn-missing');
+        if (missingBtn) missingBtn.innerHTML = `&#9986; ${t('admin.quiz_missing') || 'Missing'}`;
+        const zoomBtn = document.getElementById('sdp-btn-zoom');
+        if (zoomBtn) zoomBtn.innerHTML = `&#128269; ${t('admin.quiz_zoom') || 'Zoom'}`;
+        // 4th answer labels
+        document.querySelectorAll('#sdp-row-d-wrapper span[style*="color:#ffa726"], #sdp-edit-d-wrapper span[style*="color:#ffa726"]').forEach(el => {
+            el.textContent = t('admin.quiz_4th_label') || '4th answer (decoy trap)';
+        });
+        // Analyzing label
+        const analyzingLabel = document.querySelector('.i18n-quiz-analyzing');
+        if (analyzingLabel) analyzingLabel.textContent = t('admin.quiz_analyzing') || 'Analyzing...';
+
+
         // Show the third column
         const layout = document.querySelector('.exp-layout');
         if (layout) layout.classList.add('has-detail');
@@ -2934,12 +2981,36 @@
             reviewBox.style.display = '';
             // Map answers so correct is always in the ★ field
             const correctLetter = slide.correct_answer;
-            const answers = {a: slide.answer_a, b: slide.answer_b, c: slide.answer_c};
+            const answers = {a: slide.answer_a, b: slide.answer_b, c: slide.answer_c, d: slide.answer_d};
             const correctText = answers[correctLetter] || '';
-            const wrongTexts = Object.entries(answers).filter(([l]) => l !== correctLetter).map(([,v]) => v);
+            // Track which wrong letters map to which edit fields (for in-place save)
+            const wrongEntries = Object.entries(answers).filter(([l, v]) => l !== correctLetter && v);
+            const wrongTexts = wrongEntries.map(([,v]) => v);
+            // Store original letter mapping for saveQuizEdits
+            window._editLetterMap = {
+                correct: correctLetter,
+                wrong: wrongEntries.map(([l]) => l),
+            };
             document.getElementById('sdp-edit-a').value = correctText;
             document.getElementById('sdp-edit-b').value = wrongTexts[0] || '';
             document.getElementById('sdp-edit-c').value = wrongTexts[1] || '';
+            // 4th answer: show for missing quiz type or if answer_d exists
+            const isMissing = slide.quiz_type === 'missing';
+            const editDWrapper = document.getElementById('sdp-edit-d-wrapper');
+            const editDEnabled = document.getElementById('sdp-edit-d-enabled');
+            const editDRow = document.getElementById('sdp-edit-d-row');
+            const editD = document.getElementById('sdp-edit-d');
+            if (isMissing || slide.answer_d) {
+                editDWrapper.style.display = '';
+                const hasD = wrongTexts[2] || slide.answer_d || '';
+                editDEnabled.checked = !!hasD;
+                editDRow.style.display = hasD ? 'flex' : 'none';
+                editD.value = hasD || (t('admin.quiz_nobody_missing') || 'Nobody is missing');
+            } else {
+                editDWrapper.style.display = 'none';
+                editDEnabled.checked = false;
+                editD.value = '';
+            }
             document.getElementById('sdp-edit-status').textContent = '';
         } else {
             reviewBox.style.display = 'none';
@@ -3103,13 +3174,13 @@
                 data = await res.json();
                 pendingZoomBbox = data.bbox;
                 document.getElementById('sdp-people-desc').textContent =
-                    data.detail ? `Detail: ${data.detail}` : 'Analysis complete';
+                    data.detail ? `${t('admin.quiz_detail') || 'Detail'}: ${data.detail}` : (t('admin.quiz_analysis_complete') || 'Analysis complete');
             } else {
                 const useGeminiAnalyze = document.getElementById('sdp-use-gemini-analyze')?.value === 'true';
                 const res = await fetch(`/api/media/${slide.media_id}/analyze-people`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ use_gemini: useGeminiAnalyze })
+                    body: JSON.stringify({ use_gemini: useGeminiAnalyze, lang: CURRENT_LANG || 'en' })
                 });
                 if (!res.ok) {
                     const err = await res.json().catch(() => ({}));
@@ -3122,15 +3193,18 @@
                 const isLocal = data.source && data.source.startsWith('local');
                 if (isLocal && peopleCount <= 1 && type !== 'zoom') {
                     descEl.innerHTML = `<div style="background:rgba(251,191,36,0.15); border:1px solid #fbbf24; border-radius:8px; padding:10px 12px; margin-top:4px;">
-                        <div style="color:#fbbf24; font-weight:700; font-size:13px; margin-bottom:6px;">&#9888; Local engine found only ${peopleCount} person</div>
-                        <div style="font-size:11px; color:var(--text-muted); margin-bottom:8px;">Group photos need Gemini AI to identify all people by name.</div>
+                        <div style="color:#fbbf24; font-weight:700; font-size:13px; margin-bottom:6px;">&#9888; ${tReplace('admin.quiz_local_warning', {count: peopleCount}) || 'Local engine found only ' + peopleCount + ' person'}</div>
+                        <div style="font-size:11px; color:var(--text-muted); margin-bottom:8px;">${t('admin.quiz_local_warning_desc') || 'Group photos need Gemini AI to identify all people by name.'}</div>
                         <button onclick="setEngine('gemini'); startQuizOnSlide('${type}')"
                             style="background:var(--accent-blue); border:none; color:#fff; border-radius:6px; padding:8px 16px; font-size:12px; cursor:pointer; font-weight:700;">
-                            &#10024; Re-analyze with Gemini AI
+                            &#10024; ${t('admin.quiz_reanalyze_gemini') || 'Re-analyze with Gemini AI'}
                         </button>
                     </div>`;
                 } else {
-                    descEl.textContent = peopleCount ? `${peopleCount} people detected` : 'Analysis complete';
+                    const countText = peopleCount ? (tReplace('admin.quiz_people_count', {count: peopleCount}) || peopleCount + ' people detected') : (t('admin.quiz_analysis_complete') || 'Analysis complete');
+                    const reanalyzeLabel = t('admin.quiz_regen_suggestions') || 'Re-analyze';
+                    descEl.innerHTML = countText
+                        + ` <button onclick="startQuizOnSlide('${type}')" style="margin-left:8px; background:none; border:1px solid var(--accent-light-blue); color:var(--accent-light-blue); border-radius:4px; padding:2px 10px; font-size:11px; cursor:pointer;">&#x21bb; ${reanalyzeLabel}</button>`;
                 }
             }
 
@@ -3139,14 +3213,14 @@
             const personPicker = document.getElementById('sdp-person-picker');
             const personSelect = document.getElementById('sdp-person-select');
             if (type === 'missing') {
-                quizLabel.textContent = 'Which person gets removed from the photo?';
+                quizLabel.textContent = t('admin.quiz_missing_question') || 'Which person gets removed from the photo?';
                 personPicker.style.display = '';
             } else if (type === 'shadow') {
-                quizLabel.textContent = 'Which person gets turned into a black shadow?';
+                quizLabel.textContent = t('admin.quiz_shadow_question') || 'Which person gets turned into a black shadow?';
                 personPicker.style.display = '';
             } else {
                 // zoom — no person picker needed
-                quizLabel.textContent = 'What is this detail? Players see a zoomed-in crop.';
+                quizLabel.textContent = t('admin.quiz_zoom_question') || 'What is this detail? Players see a zoomed-in crop.';
                 personPicker.style.display = 'none';
             }
 
@@ -3173,7 +3247,7 @@
                 // Force admin to pick — don't auto-select
                 const placeholder = document.createElement('option');
                 placeholder.value = '';
-                placeholder.textContent = 'Pick one person from this list';
+                placeholder.textContent = t('admin.quiz_pick_person') || 'Pick one person from this list';
                 placeholder.disabled = true;
                 placeholder.selected = true;
                 personSelect.appendChild(placeholder);
@@ -3182,7 +3256,7 @@
                 const opt = document.createElement('option');
                 opt.value = p;
                 // Shorten: "Person 1: <description>" for clarity
-                opt.textContent = `Person ${i + 1}: ${p}`;
+                opt.textContent = `${tReplace('admin.quiz_person_n', {n: i + 1}) || 'Person ' + (i + 1)}: ${p}`;
                 personSelect.appendChild(opt);
             });
 
@@ -3209,29 +3283,29 @@
                 rowD.style.display = 'flex';
             }
             ansHint.textContent = show4th
-                ? 'Type 3 person names + 4th decoy. Uncheck to remove it.'
-                : 'Type 3 names. The order A B C will be randomised during the game.';
+                ? (t('admin.quiz_hint_4answers') || 'Type 3 person names + 4th decoy. Uncheck to remove it.')
+                : (t('admin.quiz_hint_3answers') || 'Type 3 names. The order A B C will be randomised during the game.');
             // Pre-fill with Gemini/local suggestions if available
             const quiz = data.quiz || {};
             ansA.value = quiz.correct || '';
             ansB.value = (quiz.wrong && quiz.wrong[0]) || '';
             ansC.value = (quiz.wrong && quiz.wrong[1]) || '';
-            ansD.value = show4th ? (quiz.wrong && quiz.wrong[2]) || 'Nobody is missing' : '';
+            ansD.value = show4th ? (quiz.wrong && quiz.wrong[2]) || (t('admin.quiz_nobody_missing') || 'Nobody is missing') : '';
 
             // Update placeholders based on quiz type
             if (type === 'zoom') {
-                ansA.placeholder = 'Correct answer';
-                ansB.placeholder = 'Wrong answer (decoy)';
-                ansC.placeholder = 'Wrong answer (decoy)';
+                ansA.placeholder = t('admin.quiz_correct_zoom') || 'Correct answer';
+                ansB.placeholder = t('admin.quiz_wrong_zoom') || 'Wrong answer (decoy)';
+                ansC.placeholder = t('admin.quiz_wrong_zoom') || 'Wrong answer (decoy)';
             } else if (type === 'missing') {
-                ansA.placeholder = 'Correct name (who was removed)';
-                ansB.placeholder = 'Wrong name (decoy)';
-                ansC.placeholder = 'Wrong name (decoy)';
-                ansD.placeholder = '4th option (e.g. Nobody is missing)';
+                ansA.placeholder = t('admin.quiz_correct_missing') || 'Correct name (who was removed)';
+                ansB.placeholder = t('admin.quiz_wrong_missing') || 'Wrong name (decoy)';
+                ansC.placeholder = t('admin.quiz_wrong_missing') || 'Wrong name (decoy)';
+                ansD.placeholder = t('admin.quiz_4th_placeholder') || '4th option (e.g. Nobody is missing)';
             } else {
-                ansA.placeholder = 'Correct name';
-                ansB.placeholder = 'Wrong name (decoy)';
-                ansC.placeholder = 'Wrong name (decoy)';
+                ansA.placeholder = t('admin.quiz_correct_placeholder') || 'Correct name';
+                ansB.placeholder = t('admin.quiz_wrong_placeholder') || 'Wrong name (decoy)';
+                ansC.placeholder = t('admin.quiz_wrong_placeholder') || 'Wrong name (decoy)';
             }
 
             loading.style.display = 'none';
@@ -3261,7 +3335,7 @@
         const personDesc = personSelect.value;
         const personIndex = personSelect.selectedIndex - (personSelect.options[0]?.disabled ? 1 : 0);
         if ((pendingQuizType === 'shadow' || pendingQuizType === 'missing') && !personDesc) {
-            alert('Please select which person to process');
+            alert(t('admin.quiz_select_person') || 'Please select which person to process');
             return;
         }
 
@@ -3349,6 +3423,19 @@
         }
     }
 
+    function toggleEdit4th() {
+        const cb = document.getElementById('sdp-edit-d-enabled');
+        const row = document.getElementById('sdp-edit-d-row');
+        const input = document.getElementById('sdp-edit-d');
+        if (cb.checked) {
+            row.style.display = 'flex';
+            if (!input.value) input.value = t('admin.quiz_nobody_missing') || 'Nobody is missing';
+        } else {
+            row.style.display = 'none';
+            input.value = '';
+        }
+    }
+
     function cancelQuizPanel() {
         const form = document.getElementById('sdp-quiz-form');
         const loading = document.getElementById('sdp-quiz-loading');
@@ -3408,38 +3495,41 @@
         const correct = document.getElementById('sdp-edit-a').value.trim();
         const wrong1 = document.getElementById('sdp-edit-b').value.trim();
         const wrong2 = document.getElementById('sdp-edit-c').value.trim();
-        if (!correct || !wrong1 || !wrong2) { alert('All 3 answers required'); return; }
+        if (!correct || !wrong1 || !wrong2) { alert(t('admin.quiz_all_required') || 'All 3 answers required'); return; }
 
-        // Re-shuffle and save
-        const answers = [
-            {text: correct, isCorrect: true},
-            {text: wrong1, isCorrect: false},
-            {text: wrong2, isCorrect: false},
-        ];
-        // Shuffle randomly
-        for (let i = answers.length - 1; i > 0; i--) {
-            const j = Math.floor(Math.random() * (i + 1));
-            [answers[i], answers[j]] = [answers[j], answers[i]];
+        // Check for optional 4th answer
+        const dEnabled = document.getElementById('sdp-edit-d-enabled');
+        const wrong3 = (dEnabled && dEnabled.checked) ? document.getElementById('sdp-edit-d').value.trim() : '';
+
+        // Save in-place — no shuffling! Put answers back at their original DB positions.
+        const map = window._editLetterMap || { correct: 'a', wrong: ['b', 'c', 'd'] };
+        const body = { answer_a: null, answer_b: null, answer_c: null, answer_d: null };
+        body[`answer_${map.correct}`] = correct;
+        const wrongs = [wrong1, wrong2];
+        if (wrong3) wrongs.push(wrong3);
+        map.wrong.forEach((letter, i) => {
+            body[`answer_${letter}`] = wrongs[i] || null;
+        });
+        // If 4th answer added but no original D slot, put it at D
+        if (wrong3 && !map.wrong.includes('d')) {
+            body.answer_d = wrong3;
         }
-        const correctLetter = ['a','b','c'][answers.findIndex(a => a.isCorrect)];
+        // If 4th answer removed, clear D
+        if (!wrong3) body.answer_d = null;
+        body.correct_answer = map.correct;
 
         const res = await fetch(`/api/slides/${activeSlideId}`, {
             method: 'PUT',
             headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({
-                answer_a: answers[0].text,
-                answer_b: answers[1].text,
-                answer_c: answers[2].text,
-                correct_answer: correctLetter,
-            })
+            body: JSON.stringify(body)
         });
         const statusEl = document.getElementById('sdp-edit-status');
         if (res.ok) {
-            statusEl.innerHTML = '<span style="color:#4caf50;">Saved!</span>';
+            statusEl.innerHTML = `<span style="color:#4caf50;">${t('admin.quiz_saved') || 'Saved!'}</span>`;
             await openExperience(currentExperience.id);
             setTimeout(() => statusEl.textContent = '', 2000);
         } else {
-            statusEl.innerHTML = '<span style="color:#ef4444;">Failed to save</span>';
+            statusEl.innerHTML = `<span style="color:#ef4444;">${t('admin.quiz_save_failed') || 'Failed to save'}</span>`;
         }
     }
 
@@ -3457,7 +3547,7 @@
         const correctText = slide[`answer_${correctKey}`] || '';
 
         statusEl.style.display = '';
-        statusEl.textContent = `Regenerating with ${label}...`;
+        statusEl.textContent = tReplace('admin.quiz_regenerating', {engine: label}) || `Regenerating with ${label}...`;
         statusEl.style.color = 'var(--accent-light-blue)';
 
         try {
@@ -3479,7 +3569,7 @@
             const silImg = document.getElementById('sdp-silhouette-img');
             const silGen = document.getElementById('sdp-silhouette-generating');
             if (silImg) silImg.style.display = 'none';
-            if (silGen) { silGen.style.display = 'flex'; document.getElementById('sdp-gen-status').textContent = `Regenerating (${label})...`; }
+            if (silGen) { silGen.style.display = 'flex'; document.getElementById('sdp-gen-status').textContent = tReplace('admin.quiz_regenerating', {engine: label}) || `Regenerating (${label})...`; }
 
             // Poll for completion
             const pollId = setInterval(async () => {
@@ -3488,7 +3578,7 @@
                     const status = await sr.json();
                     if (status.status === 'done') {
                         clearInterval(pollId);
-                        statusEl.textContent = `Done! Image regenerated with ${label}.`;
+                        statusEl.textContent = tReplace('admin.quiz_regen_done', {engine: label}) || `Done! Image regenerated with ${label}.`;
                         statusEl.style.color = '#4caf50';
                         await openExperience(currentExperience.id);
                         openSlideDetail(activeSlideId);
@@ -4179,7 +4269,7 @@
         const relaxed = !!exp.relaxed_mode;
         const sound = exp.sound_enabled !== false;
         const speed = exp.speed_scoring !== false;
-        const maxPts = exp.max_points || 100;
+        const maxPts = exp.max_points != null ? exp.max_points : 10;
         // Lobby controls
         const lpm = document.getElementById('live-player-mode');
         if (lpm) lpm.value = mode;

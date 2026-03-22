@@ -565,12 +565,13 @@ async def analyze_people(media_id: int, request: Request, db=Depends(get_db)):
     except Exception:
         data = {}
     use_gemini = data.get("use_gemini", None)  # None = auto
+    lang = data.get("lang", "en")  # Language for AI descriptions
 
     # If explicitly requesting Gemini
     if use_gemini is True:
         if not os.environ.get("GEMINI_API_KEY"):
             raise HTTPException(400, "Gemini API key required. Add it in Settings.")
-        result = await asyncio.to_thread(analyze_people_gemini, source_path)
+        result = await asyncio.to_thread(analyze_people_gemini, source_path, lang)
         if result:
             return result
         raise HTTPException(500, "Gemini could not detect people in photo")
@@ -584,38 +585,38 @@ async def analyze_people(media_id: int, request: Request, db=Depends(get_db)):
 
     # Auto: Try Gemini first (provides descriptions + positions), fall back to local
     if os.environ.get("GEMINI_API_KEY"):
-        result = await asyncio.to_thread(analyze_people_gemini, source_path)
+        result = await asyncio.to_thread(analyze_people_gemini, source_path, lang)
         if result:
             return result
 
     # Local fallback: detect people count via rembg connected components
-    result = await asyncio.to_thread(_analyze_people_local, source_path)
+    result = await asyncio.to_thread(_analyze_people_local, source_path, lang)
     if result:
         return result
     raise HTTPException(500, "Could not detect people in photo")
 
 
-def _analyze_people_local(source_path: str) -> dict | None:
+def _analyze_people_local(source_path: str, lang: str = "en") -> dict | None:
     """Fast local people detection via OpenCV face detection. Falls back to rembg.
     OpenCV: ~100ms. rembg fallback: ~2s."""
     import time
     t0 = time.time()
 
     # Try OpenCV face detection first (much faster)
-    result = _detect_faces_opencv(source_path)
+    result = _detect_faces_opencv(source_path, lang)
     if result:
         print(f"[LOCAL ANALYZE] OpenCV face detection: {(time.time()-t0)*1000:.0f}ms, {len(result['people'])} people")
         return result
 
     # Fall back to rembg segmentation (slower but catches non-frontal faces)
     print("[LOCAL ANALYZE] OpenCV found no faces, falling back to rembg...")
-    result = _detect_people_rembg(source_path)
+    result = _detect_people_rembg(source_path, lang)
     if result:
         print(f"[LOCAL ANALYZE] rembg fallback: {(time.time()-t0)*1000:.0f}ms, {len(result['people'])} people")
     return result
 
 
-def _detect_faces_opencv(source_path: str) -> dict | None:
+def _detect_faces_opencv(source_path: str, lang: str = "en") -> dict | None:
     """Detect faces using OpenCV Haar cascades. ~100ms, no GPU needed."""
     try:
         import cv2
@@ -675,21 +676,24 @@ def _detect_faces_opencv(source_path: str) -> dict | None:
         # Sort left to right
         merged.sort(key=lambda b: b[0] + b[2]/2)
 
+        person_label = "Personne" if lang == "fr" else "Person"
+        someone_else = "Quelqu'un d'autre" if lang == "fr" else "Someone else"
+        nobody = "Personne" if lang == "fr" else "Nobody"
+
         people = []
         positions = []
         for i, (x, y, bw, bh) in enumerate(merged):
             cx = (x + bw/2) / sw * 100
             cy = (y + bh/2) / sh * 100
-            people.append(f"Person {i+1}")
+            people.append(f"{person_label} {i+1}")
             positions.append({"center_x": round(cx, 1), "center_y": round(cy, 1)})
 
         return {
             "people": people,
             "positions": positions,
             "quiz": {
-                "question": "Who is behind the silhouette?",
                 "correct": people[0],
-                "wrong": [f"Person {i+2}" for i in range(min(2, len(people) - 1))] or ["Someone else", "Nobody"],
+                "wrong": [f"{person_label} {i+2}" for i in range(min(2, len(people) - 1))] or [someone_else, nobody],
             },
             "source": "local_opencv",
         }
@@ -700,7 +704,7 @@ def _detect_faces_opencv(source_path: str) -> dict | None:
         return None
 
 
-def _detect_people_rembg(source_path: str) -> dict | None:
+def _detect_people_rembg(source_path: str, lang: str = "en") -> dict | None:
     """Detect people using rembg segmentation. Slower (~2s) but catches all poses."""
     try:
         from rembg import remove
@@ -737,7 +741,10 @@ def _detect_people_rembg(source_path: str) -> dict | None:
             positions.append({"center_x": round(cx, 1), "center_y": round(cy, 1)})
 
         positions.sort(key=lambda p: p["center_x"])
-        people = [f"Person {i+1}" for i in range(len(positions))]
+        person_label = "Personne" if lang == "fr" else "Person"
+        someone_else = "Quelqu'un d'autre" if lang == "fr" else "Someone else"
+        nobody_label = "Personne" if lang == "fr" else "Nobody"
+        people = [f"{person_label} {i+1}" for i in range(len(positions))]
 
         if not people:
             return None
@@ -746,9 +753,8 @@ def _detect_people_rembg(source_path: str) -> dict | None:
             "people": people,
             "positions": positions,
             "quiz": {
-                "question": "Who is behind the silhouette?",
                 "correct": people[0],
-                "wrong": [f"Person {i+2}" for i in range(min(2, len(people) - 1))] or ["Someone else", "Nobody"],
+                "wrong": [f"{person_label} {i+2}" for i in range(min(2, len(people) - 1))] or [someone_else, nobody_label],
             },
             "source": "local_rembg",
         }
@@ -884,11 +890,16 @@ async def make_quiz_from_slide(slide_id: int, request: Request, db=Depends(get_d
         raise HTTPException(404, "Media file not found")
 
     # Build answers list: 1 correct + up to 3 wrong
+    # If 4th answer exists, keep it always at position D (not randomized)
     import random
+    fourth_answer = wrong[2] if len(wrong) > 2 else None
+    main_wrong = wrong[:2]
     answers = [{"text": correct, "is_correct": True}]
-    for w in wrong[:3]:
+    for w in main_wrong:
         answers.append({"text": w, "is_correct": False})
-    random.shuffle(answers)
+    random.shuffle(answers)  # Only shuffle A/B/C
+    if fourth_answer:
+        answers.append({"text": fourth_answer, "is_correct": False})  # D is always last
     letter_keys = ["a", "b", "c", "d"]
     correct_letter = letter_keys[next(i for i, a in enumerate(answers) if a["is_correct"])]
 
@@ -1253,9 +1264,9 @@ async def get_experience(exp_id: int, db=Depends(get_db)):
         "sound_enabled": exp.sound_enabled,
         "player_display_mode": exp.player_display_mode or "question_and_choices",
         "speed_scoring": exp.speed_scoring if exp.speed_scoring is not None else True,
-        "max_points": exp.max_points if exp.max_points is not None else 100,
-        "min_points": exp.min_points if exp.min_points is not None else 10,
-        "wrong_points": exp.wrong_points or 0,
+        "max_points": exp.max_points if exp.max_points is not None else 10,
+        "min_points": exp.min_points if exp.min_points is not None else 0,
+        "wrong_points": exp.wrong_points if exp.wrong_points is not None else -10,
         "slides": [{
             "id": s.id, "position": s.position, "slide_type": s.slide_type.value, "quiz_type": s.quiz_type,
             "media_id": s.media_id,
@@ -2026,7 +2037,7 @@ async def add_test_player(request: Request, db=Depends(get_db)):
     room = active_rooms.get(code)
     if not room:
         raise HTTPException(404, "Room not found")
-    if len(room["players"]) >= 30:
+    if len(room["players"]) >= 50:
         raise HTTPException(400, "Room is full")
     # Check name uniqueness
     existing_names = {p["nickname"].lower() for p in room["players"].values()}
@@ -3126,7 +3137,7 @@ async def player_join(sid, data):
         await sio.emit("join_error", {"message": "room_locked"}, to=sid)
         return
 
-    if len(room["players"]) >= 30:
+    if len(room["players"]) >= 50:
         await sio.emit("join_error", {"message": "room_full"}, to=sid)
         return
 
@@ -3263,9 +3274,9 @@ async def submit_answer(sid, data):
     exp = room["experience"]
     timer_duration = slide.get("question_timer") or exp["default_question_timer"]
     speed_ratio = min(1.0, time_taken / timer_duration) if timer_duration > 0 else 1.0
-    max_pts = exp.get("max_points", 100)
-    min_pts = exp.get("min_points", 10)
-    wrong_pts = exp.get("wrong_points", 0)
+    max_pts = exp.get("max_points", 10)
+    min_pts = exp.get("min_points", 0)
+    wrong_pts = exp.get("wrong_points", -10)
     use_speed = exp.get("speed_scoring", True)
 
     if exp.get("relaxed_mode"):
