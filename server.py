@@ -1155,6 +1155,26 @@ async def delete_experience(exp_id: int, db=Depends(get_db)):
 
 _silhouette_tasks = {}  # slide_id -> {"status": "generating"|"done"|"error", "warning": str|None}
 
+async def _run_silhouette_task(slide_id: int, source_path: str, mode: str):
+    """Generate silhouette in background, update DB and task status."""
+    try:
+        sil_path = await asyncio.to_thread(
+            generate_silhouette, source_path, SILHOUETTE_DIR, slide_id, mode
+        )
+        async with SessionLocal() as sdb:
+            s = await sdb.get(Slide, slide_id)
+            if s and sil_path:
+                s.silhouette_path = sil_path
+                await sdb.commit()
+        _silhouette_tasks[slide_id] = {"status": "done", "warning": None}
+    except ValueError as e:
+        if "no_person_detected" in str(e):
+            _silhouette_tasks[slide_id] = {"status": "done", "warning": "no_person_detected"}
+        else:
+            _silhouette_tasks[slide_id] = {"status": "error", "warning": str(e)}
+    except Exception as e:
+        _silhouette_tasks[slide_id] = {"status": "error", "warning": str(e)}
+
 @app.get("/api/slides/{slide_id}/silhouette-status")
 async def silhouette_status(slide_id: int):
     task = _silhouette_tasks.get(slide_id)
@@ -1196,27 +1216,7 @@ async def add_slide(exp_id: int, request: Request, db=Depends(get_db)):
             sil_mode = data.get("silhouette_mode", "local")
             slide_id = slide.id
             _silhouette_tasks[slide_id] = {"status": "generating", "warning": None}
-
-            async def _gen_silhouette():
-                try:
-                    sil_path = await asyncio.to_thread(
-                        generate_silhouette, source_path, SILHOUETTE_DIR, slide_id, sil_mode
-                    )
-                    async with SessionLocal() as sdb:
-                        s = await sdb.get(Slide, slide_id)
-                        if s and sil_path:
-                            s.silhouette_path = sil_path
-                            await sdb.commit()
-                    _silhouette_tasks[slide_id] = {"status": "done", "warning": None}
-                except ValueError as e:
-                    if "no_person_detected" in str(e):
-                        _silhouette_tasks[slide_id] = {"status": "done", "warning": "no_person_detected"}
-                    else:
-                        _silhouette_tasks[slide_id] = {"status": "error", "warning": str(e)}
-                except Exception as e:
-                    _silhouette_tasks[slide_id] = {"status": "error", "warning": str(e)}
-
-            task = asyncio.create_task(_gen_silhouette())
+            task = asyncio.create_task(_run_silhouette_task(slide_id, source_path, sil_mode))
             _bg_tasks.add(task)
             task.add_done_callback(_bg_tasks.discard)
             return {"id": slide.id, "position": slide.position, "generating": True}
@@ -1267,27 +1267,7 @@ async def api_generate_silhouette(slide_id: int, request: Request, db=Depends(ge
         raise HTTPException(400, "AI features need a Gemini key. Add it in Settings.")
 
     _silhouette_tasks[slide_id] = {"status": "generating", "warning": None}
-
-    async def _regen():
-        try:
-            sil_path = await asyncio.to_thread(
-                generate_silhouette, source_path, SILHOUETTE_DIR, slide_id, mode
-            )
-            async with SessionLocal() as sdb:
-                s = await sdb.get(Slide, slide_id)
-                if s and sil_path:
-                    s.silhouette_path = sil_path
-                    await sdb.commit()
-            _silhouette_tasks[slide_id] = {"status": "done", "warning": None}
-        except ValueError as e:
-            if "no_person_detected" in str(e):
-                _silhouette_tasks[slide_id] = {"status": "done", "warning": "no_person_detected"}
-            else:
-                _silhouette_tasks[slide_id] = {"status": "error", "warning": str(e)}
-        except Exception as e:
-            _silhouette_tasks[slide_id] = {"status": "error", "warning": str(e)}
-
-    task = asyncio.create_task(_regen())
+    task = asyncio.create_task(_run_silhouette_task(slide_id, source_path, mode))
     _bg_tasks.add(task)
     task.add_done_callback(_bg_tasks.discard)
     return {"ok": True, "generating": True}
@@ -1753,11 +1733,13 @@ async def list_rooms():
 
 
 @app.get("/api/rooms/history")
-async def rooms_history(db=Depends(get_db)):
+async def rooms_history(experience_id: int = None, db=Depends(get_db)):
     """List past (finished) game sessions with scores."""
+    query = select(Room).where(Room.state == GameState.FINISHED)
+    if experience_id:
+        query = query.where(Room.experience_id == experience_id)
     result = await db.execute(
-        select(Room).where(Room.state == GameState.FINISHED)
-        .order_by(Room.created_at.desc()).limit(20)
+        query.order_by(Room.created_at.desc()).limit(20)
     )
     rooms = result.scalars().all()
     history = []
@@ -1811,6 +1793,23 @@ async def delete_room(code: str, db=Depends(get_db)):
     if db_room:
         db_room.state = GameState.FINISHED
         await db.commit()
+    return {"ok": True}
+
+
+@app.delete("/api/rooms/{code}/history")
+async def delete_room_history(code: str, db=Depends(get_db)):
+    """Permanently delete a finished room and all its player data."""
+    result = await db.execute(select(Room).where(Room.code == code))
+    db_room = result.scalar_one_or_none()
+    if not db_room:
+        raise HTTPException(404, "Room not found")
+    p_result = await db.execute(select(Player).where(Player.room_id == db_room.id))
+    players = p_result.scalars().all()
+    for p in players:
+        await db.execute(delete(PlayerAnswer).where(PlayerAnswer.player_id == p.id))
+    await db.execute(delete(Player).where(Player.room_id == db_room.id))
+    await db.delete(db_room)
+    await db.commit()
     return {"ok": True}
 
 
@@ -1888,7 +1887,7 @@ async def create_room(request: Request, db=Depends(get_db)):
         "join_url": join_url,
     }
 
-    return {"code": code, "room_id": room.id, "qr_b64": qr_b64, "join_url": join_url}
+    return {"code": code, "room_id": room.id, "qr_b64": qr_b64, "join_url": join_url, "experience_name": exp.name}
 
 @app.get("/api/rooms/{code}")
 async def get_room_info(code: str):
@@ -1935,6 +1934,11 @@ async def disconnect(sid):
                     "nickname": player["nickname"]
                 }, room=f"admin_{code}")
                 await sio.emit("player_list", get_player_list(code), room=f"admin_{code}")
+                connected_names = [p["nickname"] for p in room["players"].values() if p["connected"]]
+                await sio.emit("player_update", {
+                    "player_count": len(connected_names),
+                    "players": connected_names,
+                }, room=f"display_{code}")
                 return
 
 def get_player_list(code):
@@ -2073,6 +2077,8 @@ async def display_join(sid, data):
         "qr_b64": room["qr_b64"],
         "join_url": room["join_url"],
         "experience": room["experience"],
+        "player_count": len(room["players"]),
+        "players": [p["nickname"] for p in room["players"].values()],
     }, to=sid)
 
 @sio.event
@@ -2125,6 +2131,9 @@ async def start_experience(sid, data):
 
     if slide and slide["slide_type"] == "game":
         await start_question_timer(code)
+    elif slide and slide["slide_type"] == "frame":
+        duration = slide.get("display_duration") or room["experience"].get("default_image_duration", 8)
+        await start_frame_timer(code, duration)
 
 async def start_question_timer(code):
     room = active_rooms.get(code)
@@ -2226,6 +2235,27 @@ async def advance_slide(code, direction):
 
     if slide and slide["slide_type"] == "game":
         await start_question_timer(code)
+    elif slide and slide["slide_type"] == "frame":
+        duration = slide.get("display_duration") or room.get("experience", {}).get("default_image_duration", 8)
+        await start_frame_timer(code, duration)
+
+async def start_frame_timer(code, duration):
+    """Auto-advance frame slide after duration seconds. Send timer to admin."""
+    room = active_rooms.get(code)
+    if not room:
+        return
+    import time as _time
+    deadline = int((_time.time() + duration) * 1000)
+    await sio.emit("frame_timer", {"duration": duration, "deadline": deadline}, room=f"admin_{code}")
+    await sio.emit("frame_timer", {"duration": duration, "deadline": deadline}, room=f"display_{code}")
+
+    async def auto_advance():
+        await asyncio.sleep(duration)
+        # Only advance if still on the same slide
+        if active_rooms.get(code) is room and room["state"] == "playing":
+            await advance_slide(code, 1)
+
+    room["timer_task"] = asyncio.create_task(auto_advance())
 
 @sio.event
 async def admin_end_game(sid, data):
@@ -2420,6 +2450,11 @@ async def remove_player(sid, data):
             del room["players"][psid]
             break
     await sio.emit("player_list", get_player_list(code), room=f"admin_{code}")
+    connected_names = [p["nickname"] for p in room["players"].values() if p["connected"]]
+    await sio.emit("player_update", {
+        "player_count": len(connected_names),
+        "players": connected_names,
+    }, room=f"display_{code}")
 
 def get_leaderboard(code):
     room = active_rooms.get(code)
@@ -2532,7 +2567,9 @@ async def player_join(sid, data):
         "player_count": len(room["players"]),
     }, room=f"admin_{code}")
     await sio.emit("player_joined", {
+        "nickname": nickname,
         "player_count": len(room["players"]),
+        "players": [p["nickname"] for p in room["players"].values()],
     }, room=f"display_{code}")
     await sio.emit("player_list", get_player_list(code), room=f"admin_{code}")
 

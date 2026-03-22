@@ -119,6 +119,16 @@
     }
     .lobby-player-count.bump { animation: countBump 0.4s ease; }
     @keyframes countBump { 0%{transform:scale(1)} 50%{transform:scale(1.15)} 100%{transform:scale(1)} }
+    .lobby-player-names {
+        display: flex; flex-wrap: wrap; gap: 10px; justify-content: center;
+        margin-top: 16px; max-width: 100%; overflow: hidden;
+    }
+    .lobby-player-chip {
+        background: rgba(255,255,255,0.18); backdrop-filter: blur(8px);
+        padding: 8px 20px; border-radius: 50px; font-size: 22px; font-weight: 600;
+        color: #fff; white-space: nowrap; animation: chipIn 0.4s ease;
+    }
+    @keyframes chipIn { 0%{opacity:0;transform:scale(0.7)} 100%{opacity:1;transform:scale(1)} }
     /* Bottom bar — single line */
     .lobby-bottom-bar {
         background: rgba(0,0,0,0.7);
@@ -501,6 +511,7 @@
             <div class="lobby-info-panel">
                 <div class="lobby-status" id="lobby-status-text" data-t="display.beginning_soon">Beginning soon.</div>
                 <div class="lobby-player-count" id="lobby-players">0 players joined</div>
+                <div id="lobby-player-names" class="lobby-player-names"></div>
             </div>
         </div>
         <div class="lobby-bottom-bar" id="lobby-bottom-bar" style="display:none;">
@@ -647,6 +658,13 @@
             el.classList.remove('bump');
             void el.offsetWidth; // force reflow
             el.classList.add('bump');
+            if (data.players) renderLobbyNames(data.players);
+        });
+
+        socket.on('player_update', (data) => {
+            const el = document.getElementById('lobby-players');
+            el.textContent = formatPlayersJoined(data.player_count);
+            if (data.players) renderLobbyNames(data.players);
         });
 
         socket.on('game_started', (data) => {
@@ -720,13 +738,23 @@
             document.getElementById('lobby-title').textContent = data.experience.name;
         }
 
-        const pc = data.players ? data.players.length : 0;
+        const pc = data.player_count || (data.players ? data.players.length : 0);
         document.getElementById('lobby-players').textContent = formatPlayersJoined(pc);
+        if (data.players) renderLobbyNames(data.players);
     }
 
     function formatPlayersJoined(count) {
         if (count === 1) return t('display.one_player_joined') || '1 player joined';
         return tReplace('display.players_joined', {count}) || `${count} players joined`;
+    }
+
+    function renderLobbyNames(names) {
+        const container = document.getElementById('lobby-player-names');
+        if (!container) return;
+        const escHtml = s => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+        container.innerHTML = names.map(n =>
+            `<span class="lobby-player-chip">${escHtml(n)}</span>`
+        ).join('');
     }
 
     // ═══ Show slide ═══

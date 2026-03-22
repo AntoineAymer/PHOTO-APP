@@ -227,6 +227,92 @@ def get_gemini_usage() -> dict:
         "total": data.get("total_calls", 0),
     }
 
+def _get_mdls_date(file_path: str) -> datetime | None:
+    """Extract creation date from macOS Spotlight metadata (mdls)."""
+    try:
+        result = subprocess.run(
+            ["mdls", "-name", "kMDItemContentCreationDate", "-raw", file_path],
+            capture_output=True, text=True, timeout=5
+        )
+        raw = result.stdout.strip()
+        if raw and raw != "(null)":
+            dt = datetime.strptime(raw.split("+")[0].strip(), "%Y-%m-%d %H:%M:%S")
+            if (datetime.now() - dt).days > 2:
+                return dt
+    except Exception:
+        pass
+    return None
+
+
+def _prepare_image_for_gemini(file_path: str, max_dim: int = 768, quality: int = 80) -> str:
+    """Open image, resize, encode to base64 JPEG for Gemini API."""
+    import base64
+    import io
+    img = Image.open(file_path).convert("RGB")
+    if max(img.size) > max_dim:
+        ratio = max_dim / max(img.size)
+        img = img.resize((int(img.width * ratio), int(img.height * ratio)), Image.LANCZOS)
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG", quality=quality)
+    return base64.b64encode(buf.getvalue()).decode("utf-8")
+
+
+def _gemini_text_request(prompt: str, img_b64: str, feature: str,
+                         temperature: float = 0.2, max_tokens: int = 4096,
+                         timeout: int = 30, model: str = "gemini-2.5-flash") -> dict | None:
+    """Send a text-analysis request to Gemini and return parsed JSON result."""
+    import json
+    import urllib.request
+    import ssl
+
+    api_key = os.environ.get("GEMINI_API_KEY")
+    if not api_key:
+        return None
+
+    url = (
+        f"https://generativelanguage.googleapis.com/v1beta/models/"
+        f"{model}:generateContent?key={api_key}"
+    )
+
+    payload = {
+        "contents": [{
+            "parts": [
+                {"inlineData": {"mimeType": "image/jpeg", "data": img_b64}},
+                {"text": prompt},
+            ]
+        }],
+        "generationConfig": {"temperature": temperature, "maxOutputTokens": max_tokens},
+    }
+
+    req = urllib.request.Request(
+        url,
+        data=json.dumps(payload).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+        method="POST"
+    )
+
+    try:
+        import certifi
+        ssl_ctx = ssl.create_default_context(cafile=certifi.where())
+    except ImportError:
+        ssl_ctx = ssl.create_default_context()
+
+    track_gemini_call(feature)
+    with urllib.request.urlopen(req, timeout=timeout, context=ssl_ctx) as resp:
+        return json.loads(resp.read().decode("utf-8"))
+
+
+def _extract_gemini_text(result: dict) -> str | None:
+    """Extract the first text part from a Gemini API response."""
+    for candidate in result.get("candidates", []):
+        parts = candidate.get("content", {}).get("parts", [])
+        for part in parts:
+            text = part.get("text", "").strip()
+            if text:
+                return text
+    return None
+
+
 # Register HEIF/HEIC support with Pillow
 pillow_heif.register_heif_opener()
 
@@ -267,18 +353,9 @@ def get_exif_date(file_path: str) -> datetime | None:
         pass
 
     # 2. macOS Spotlight metadata (works even when EXIF stripped)
-    try:
-        result = subprocess.run(
-            ["mdls", "-name", "kMDItemContentCreationDate", "-raw", file_path],
-            capture_output=True, text=True, timeout=5
-        )
-        raw = result.stdout.strip()
-        if raw and raw != "(null)":
-            dt = datetime.strptime(raw.split("+")[0].strip(), "%Y-%m-%d %H:%M:%S")
-            if (datetime.now() - dt).days > 2:
-                return dt
-    except Exception:
-        pass
+    mdls_dt = _get_mdls_date(file_path)
+    if mdls_dt:
+        return mdls_dt
 
     # 3. Filename pattern: IMG_20210503, VID_2019-08-14, 2020-12-25, etc.
     try:
@@ -335,19 +412,9 @@ def get_video_creation_date(file_path: str) -> datetime | None:
             pass
 
     # Fallback: macOS Spotlight metadata (kMDItemContentCreationDate)
-    try:
-        result = subprocess.run(
-            ["mdls", "-name", "kMDItemContentCreationDate", "-raw", file_path],
-            capture_output=True, text=True, timeout=5
-        )
-        raw = result.stdout.strip()
-        if raw and raw != "(null)":
-            # Format: "2019-04-14 12:44:31 +0000"
-            dt = datetime.strptime(raw.split("+")[0].strip(), "%Y-%m-%d %H:%M:%S")
-            if (datetime.now() - dt).days > 2:
-                return dt
-    except Exception:
-        pass
+    mdls_dt = _get_mdls_date(file_path)
+    if mdls_dt:
+        return mdls_dt
 
     # Last fallback: file birth time
     try:
@@ -861,81 +928,27 @@ def generate_silhouette_gemini(source_path: str, silhouette_dir: str, slide_id: 
 def estimate_photo_year_gemini(file_path: str) -> int | None:
     """Use Gemini API to estimate the year a photo was taken based on visual content.
     Returns estimated year (e.g. 2008) or None on failure."""
-    import base64
-    import json
-    import urllib.request
-    import urllib.error
-    import ssl
-    import io
-
-    api_key = os.environ.get("GEMINI_API_KEY")
-    if not api_key:
-        return None
-
     try:
-        img = Image.open(file_path).convert("RGB")
-        # Resize small for fast API call
-        max_dim = 512
-        if max(img.size) > max_dim:
-            ratio = max_dim / max(img.size)
-            img = img.resize((int(img.width * ratio), int(img.height * ratio)), Image.LANCZOS)
-
-        buf = io.BytesIO()
-        img.save(buf, format="JPEG", quality=70)
-        img_b64 = base64.b64encode(buf.getvalue()).decode("utf-8")
-
-        url = (
-            "https://generativelanguage.googleapis.com/v1beta/models/"
-            "gemini-2.5-flash:generateContent"
-            f"?key={api_key}"
+        img_b64 = _prepare_image_for_gemini(file_path, max_dim=512, quality=70)
+        prompt = (
+            "Estimate what year this photo was most likely taken. "
+            "Consider clothing, hairstyles, image quality, devices visible, "
+            "and any other visual clues. "
+            "Reply with ONLY a single 4-digit year number, nothing else. "
+            "Example: 2007"
         )
-
-        payload = {
-            "contents": [{
-                "parts": [
-                    {"inlineData": {"mimeType": "image/jpeg", "data": img_b64}},
-                    {"text": (
-                        "Estimate what year this photo was most likely taken. "
-                        "Consider clothing, hairstyles, image quality, devices visible, "
-                        "and any other visual clues. "
-                        "Reply with ONLY a single 4-digit year number, nothing else. "
-                        "Example: 2007"
-                    )},
-                ]
-            }],
-            "generationConfig": {"temperature": 0.1, "maxOutputTokens": 256},
-        }
-
-        req = urllib.request.Request(
-            url,
-            data=json.dumps(payload).encode("utf-8"),
-            headers={"Content-Type": "application/json"},
-            method="POST"
-        )
-
-        try:
-            import certifi
-            ssl_ctx = ssl.create_default_context(cafile=certifi.where())
-        except ImportError:
-            ssl_ctx = ssl.create_default_context()
-
-        track_gemini_call("year_estimate")
-        with urllib.request.urlopen(req, timeout=15, context=ssl_ctx) as resp:
-            result = json.loads(resp.read().decode("utf-8"))
-
-        # Extract text response
-        candidates = result.get("candidates", [])
-        for candidate in candidates:
-            parts = candidate.get("content", {}).get("parts", [])
-            for part in parts:
-                text = part.get("text", "").strip()
-                # Extract 4-digit year
-                import re
-                m = re.search(r'(19[5-9]\d|20[0-3]\d)', text)
-                if m:
-                    year = int(m.group(1))
-                    print(f"Gemini estimated year for {os.path.basename(file_path)}: {year}")
-                    return year
+        result = _gemini_text_request(prompt, img_b64, "year_estimate",
+                                      temperature=0.1, max_tokens=256, timeout=15)
+        if not result:
+            return None
+        text = _extract_gemini_text(result)
+        if text:
+            import re
+            m = re.search(r'(19[5-9]\d|20[0-3]\d)', text)
+            if m:
+                year = int(m.group(1))
+                print(f"Gemini estimated year for {os.path.basename(file_path)}: {year}")
+                return year
         return None
     except Exception as e:
         print(f"Gemini date estimation failed for {file_path}: {e}")
@@ -945,76 +958,31 @@ def estimate_photo_year_gemini(file_path: str) -> int | None:
 def analyze_people_gemini(file_path: str) -> dict | None:
     """Use Gemini to identify people in a photo and suggest quiz answers.
     Returns {"people": [...], "quiz": {"correct": str, "wrong": [str, str]}} or None."""
-    import base64
     import json
-    import urllib.request
-    import ssl
-    import io
-
-    api_key = os.environ.get("GEMINI_API_KEY")
-    if not api_key:
-        return None
 
     try:
-        img = Image.open(file_path).convert("RGB")
-        max_dim = 768
-        if max(img.size) > max_dim:
-            ratio = max_dim / max(img.size)
-            img = img.resize((int(img.width * ratio), int(img.height * ratio)), Image.LANCZOS)
-
-        buf = io.BytesIO()
-        img.save(buf, format="JPEG", quality=80)
-        img_b64 = base64.b64encode(buf.getvalue()).decode("utf-8")
-
-        url = (
-            "https://generativelanguage.googleapis.com/v1beta/models/"
-            "gemini-2.5-flash:generateContent"
-            f"?key={api_key}"
+        img_b64 = _prepare_image_for_gemini(file_path, max_dim=768, quality=80)
+        prompt = (
+            "Analyze this photo for a party guessing game. "
+            "List each person visible with a short description (age range, clothing, position). "
+            "For each person, provide their approximate center position as percentage of image "
+            "width (center_x) and height (center_y), where 0=left/top, 100=right/bottom. "
+            "Order people from LEFT to RIGHT. "
+            "Then suggest a quiz question: pick one person as the correct answer and provide "
+            "2 plausible wrong answers (other people in the photo, or invented if only 1 person). "
+            "Reply ONLY with valid JSON, no markdown, in this exact format:\n"
+            '{"people": [{"desc": "description1", "center_x": 30, "center_y": 50}, '
+            '{"desc": "description2", "center_x": 70, "center_y": 50}], '
+            '"quiz": {"question": "Who is behind the silhouette?", '
+            '"correct": "short name/description", '
+            '"wrong": ["wrong1", "wrong2"]}}'
         )
+        result = _gemini_text_request(prompt, img_b64, "people_analysis",
+                                      temperature=0.3, max_tokens=8192)
+        if not result:
+            return None
 
-        payload = {
-            "contents": [{
-                "parts": [
-                    {"inlineData": {"mimeType": "image/jpeg", "data": img_b64}},
-                    {"text": (
-                        "Analyze this photo for a party guessing game. "
-                        "List each person visible with a short description (age range, clothing, position). "
-                        "For each person, provide their approximate center position as percentage of image "
-                        "width (center_x) and height (center_y), where 0=left/top, 100=right/bottom. "
-                        "Order people from LEFT to RIGHT. "
-                        "Then suggest a quiz question: pick one person as the correct answer and provide "
-                        "2 plausible wrong answers (other people in the photo, or invented if only 1 person). "
-                        "Reply ONLY with valid JSON, no markdown, in this exact format:\n"
-                        '{"people": [{"desc": "description1", "center_x": 30, "center_y": 50}, '
-                        '{"desc": "description2", "center_x": 70, "center_y": 50}], '
-                        '"quiz": {"question": "Who is behind the silhouette?", '
-                        '"correct": "short name/description", '
-                        '"wrong": ["wrong1", "wrong2"]}}'
-                    )},
-                ]
-            }],
-            "generationConfig": {"temperature": 0.3, "maxOutputTokens": 8192},
-        }
-
-        req = urllib.request.Request(
-            url,
-            data=json.dumps(payload).encode("utf-8"),
-            headers={"Content-Type": "application/json"},
-            method="POST"
-        )
-
-        try:
-            import certifi
-            ssl_ctx = ssl.create_default_context(cafile=certifi.where())
-        except ImportError:
-            ssl_ctx = ssl.create_default_context()
-
-        track_gemini_call("people_analysis")
-        with urllib.request.urlopen(req, timeout=30, context=ssl_ctx) as resp:
-            result = json.loads(resp.read().decode("utf-8"))
-
-        candidates = result.get("candidates", [])
-        for candidate in candidates:
+        for candidate in result.get("candidates", []):
             parts = candidate.get("content", {}).get("parts", [])
             for part in parts:
                 text = part.get("text", "").strip()
@@ -1059,73 +1027,28 @@ def analyze_zoom_gemini(file_path: str) -> dict | None:
     """Use Gemini to find an interesting detail in a photo for a Zoom In quiz.
     Returns {"detail": "description", "bbox": {"x": %, "y": %, "w": %, "h": %},
              "quiz": {"correct": str, "wrong": ["w1", "w2"]}} or None."""
-    import base64
     import json
-    import urllib.request
-    import ssl
-    import io
-
-    api_key = os.environ.get("GEMINI_API_KEY")
-    if not api_key:
-        return None
 
     try:
-        img = Image.open(file_path).convert("RGB")
-        max_dim = 768
-        if max(img.size) > max_dim:
-            ratio = max_dim / max(img.size)
-            img = img.resize((int(img.width * ratio), int(img.height * ratio)), Image.LANCZOS)
-
-        buf = io.BytesIO()
-        img.save(buf, format="JPEG", quality=80)
-        img_b64 = base64.b64encode(buf.getvalue()).decode("utf-8")
-
-        url = (
-            "https://generativelanguage.googleapis.com/v1beta/models/"
-            "gemini-2.5-flash:generateContent"
-            f"?key={api_key}"
+        img_b64 = _prepare_image_for_gemini(file_path, max_dim=768, quality=80)
+        prompt = (
+            "Analyze this photo for a party guessing game called 'Zoom In'. "
+            "Find one interesting, recognizable detail (a face, an object, a piece of clothing, "
+            "a logo, a toy, food, etc.) that would be fun to guess when shown as a tight crop. "
+            "Return the bounding box as percentages of the image (0-100). "
+            "Also suggest a quiz: the correct answer is what the detail shows, "
+            "plus 2 plausible wrong answers. "
+            "Reply ONLY with valid JSON, no markdown:\n"
+            '{"detail": "short description of the detail", '
+            '"bbox": {"x": 30, "y": 20, "w": 25, "h": 25}, '
+            '"quiz": {"correct": "what it is", "wrong": ["wrong1", "wrong2"]}}'
         )
+        result = _gemini_text_request(prompt, img_b64, "zoom_analysis",
+                                      temperature=0.5, max_tokens=8192)
+        if not result:
+            return None
 
-        payload = {
-            "contents": [{
-                "parts": [
-                    {"inlineData": {"mimeType": "image/jpeg", "data": img_b64}},
-                    {"text": (
-                        "Analyze this photo for a party guessing game called 'Zoom In'. "
-                        "Find one interesting, recognizable detail (a face, an object, a piece of clothing, "
-                        "a logo, a toy, food, etc.) that would be fun to guess when shown as a tight crop. "
-                        "Return the bounding box as percentages of the image (0-100). "
-                        "Also suggest a quiz: the correct answer is what the detail shows, "
-                        "plus 2 plausible wrong answers. "
-                        "Reply ONLY with valid JSON, no markdown:\n"
-                        '{"detail": "short description of the detail", '
-                        '"bbox": {"x": 30, "y": 20, "w": 25, "h": 25}, '
-                        '"quiz": {"correct": "what it is", "wrong": ["wrong1", "wrong2"]}}'
-                    )},
-                ]
-            }],
-            "generationConfig": {"temperature": 0.5, "maxOutputTokens": 8192},
-        }
-
-        req = urllib.request.Request(
-            url,
-            data=json.dumps(payload).encode("utf-8"),
-            headers={"Content-Type": "application/json"},
-            method="POST"
-        )
-
-        try:
-            import certifi
-            ssl_ctx = ssl.create_default_context(cafile=certifi.where())
-        except ImportError:
-            ssl_ctx = ssl.create_default_context()
-
-        track_gemini_call("zoom_analysis")
-        with urllib.request.urlopen(req, timeout=30, context=ssl_ctx) as resp:
-            result = json.loads(resp.read().decode("utf-8"))
-
-        candidates = result.get("candidates", [])
-        for candidate in candidates:
+        for candidate in result.get("candidates", []):
             parts = candidate.get("content", {}).get("parts", [])
             for part in parts:
                 text = _strip_markdown_fences(part.get("text", ""))
@@ -1201,105 +1124,60 @@ def estimate_year_from_ages_gemini(file_path: str, family_context: str) -> dict 
 
     Returns: {"year": int, "confidence": str, "reasoning": str} or None.
     """
-    import base64
     import json
-    import urllib.request
-    import ssl
-    import io
-
-    api_key = os.environ.get("GEMINI_API_KEY")
-    if not api_key:
-        return None
 
     try:
-        img = Image.open(file_path).convert("RGB")
-        max_dim = 768
-        if max(img.size) > max_dim:
-            ratio = max_dim / max(img.size)
-            img = img.resize((int(img.width * ratio), int(img.height * ratio)), Image.LANCZOS)
+        img_b64 = _prepare_image_for_gemini(file_path, quality=75)
+    except Exception as e:
+        print(f"Gemini age-based estimation failed for {file_path}: {e}")
+        return None
 
-        buf = io.BytesIO()
-        img.save(buf, format="JPEG", quality=75)
-        img_b64 = base64.b64encode(buf.getvalue()).decode("utf-8")
+    prompt = (
+        "You are an expert at estimating when a photo was taken.\n\n"
+        "STEP 1 — Estimate the apparent age of EVERY person visible in this photo.\n"
+        "STEP 2 — Look at visual clues: clothing style, hairstyles, image quality/grain, "
+        "technology visible (phones, TVs, cars), furniture, decorations, photo format.\n"
+        "STEP 3 — Cross-reference with these known family members and their birth years:\n"
+        f"{family_context}\n\n"
+        "STEP 4 — For each person you can match to a family member, compute: "
+        "birth_year + apparent_age = estimated photo year. "
+        "Average these estimates and reconcile with the visual clues from step 2.\n\n"
+        "Reply ONLY with valid JSON (no markdown fences), in this exact format:\n"
+        '{"year": 2004, "confidence": "high", '
+        '"people_seen": [{"apparent_age": 19, "match": "Flo", "computed_year": 2009}], '
+        '"reasoning": "brief explanation"}\n\n'
+        "confidence must be one of: high, medium, low.\n"
+        "If you cannot estimate at all, reply: {\"year\": null, \"confidence\": \"low\", "
+        "\"people_seen\": [], \"reasoning\": \"reason\"}"
+    )
 
-        url = (
-            "https://generativelanguage.googleapis.com/v1beta/models/"
-            "gemini-2.5-flash:generateContent"
-            f"?key={api_key}"
-        )
+    try:
+        result = _gemini_text_request(prompt, img_b64, "age_date_estimate", max_tokens=8192)
+        if not result:
+            return None
 
-        prompt = (
-            "You are an expert at estimating when a photo was taken.\n\n"
-            "STEP 1 — Estimate the apparent age of EVERY person visible in this photo.\n"
-            "STEP 2 — Look at visual clues: clothing style, hairstyles, image quality/grain, "
-            "technology visible (phones, TVs, cars), furniture, decorations, photo format.\n"
-            "STEP 3 — Cross-reference with these known family members and their birth years:\n"
-            f"{family_context}\n\n"
-            "STEP 4 — For each person you can match to a family member, compute: "
-            "birth_year + apparent_age = estimated photo year. "
-            "Average these estimates and reconcile with the visual clues from step 2.\n\n"
-            "Reply ONLY with valid JSON (no markdown fences), in this exact format:\n"
-            '{"year": 2004, "confidence": "high", '
-            '"people_seen": [{"apparent_age": 19, "match": "Flo", "computed_year": 2009}], '
-            '"reasoning": "brief explanation"}\n\n'
-            "confidence must be one of: high, medium, low.\n"
-            "If you cannot estimate at all, reply: {\"year\": null, \"confidence\": \"low\", "
-            "\"people_seen\": [], \"reasoning\": \"reason\"}"
-        )
+        text = _extract_gemini_text(result)
+        if not text:
+            return None
 
-        payload = {
-            "contents": [{
-                "parts": [
-                    {"inlineData": {"mimeType": "image/jpeg", "data": img_b64}},
-                    {"text": prompt},
-                ]
-            }],
-            "generationConfig": {"temperature": 0.2, "maxOutputTokens": 8192},
-        }
-
-        req = urllib.request.Request(
-            url,
-            data=json.dumps(payload).encode("utf-8"),
-            headers={"Content-Type": "application/json"},
-            method="POST"
-        )
-
-        try:
-            import certifi
-            ssl_ctx = ssl.create_default_context(cafile=certifi.where())
-        except ImportError:
-            ssl_ctx = ssl.create_default_context()
-
-        track_gemini_call("age_date_estimate")
-        with urllib.request.urlopen(req, timeout=30, context=ssl_ctx) as resp:
-            result = json.loads(resp.read().decode("utf-8"))
-
-        candidates = result.get("candidates", [])
-        for candidate in candidates:
-            parts = candidate.get("content", {}).get("parts", [])
-            for part in parts:
-                text = part.get("text", "").strip()
-                text = _strip_markdown_fences(text)
-                try:
-                    data = json.loads(text)
-                    year = data.get("year")
-                    if year and isinstance(year, (int, float)):
-                        year = int(year)
-                        if 1950 <= year <= 2030:
-                            print(f"Age-based estimate for {os.path.basename(file_path)}: "
-                                  f"{year} ({data.get('confidence', '?')}) — {data.get('reasoning', '')[:80]}")
-                            return {
-                                "year": year,
-                                "confidence": data.get("confidence", "low"),
-                                "reasoning": data.get("reasoning", ""),
-                                "people_seen": data.get("people_seen", []),
-                            }
-                    elif year is None:
-                        print(f"Gemini could not estimate year for {os.path.basename(file_path)}: "
-                              f"{data.get('reasoning', 'unknown')[:80]}")
-                        return None
-                except json.JSONDecodeError:
-                    pass
+        text = _strip_markdown_fences(text)
+        data = json.loads(text)
+        year = data.get("year")
+        if year and isinstance(year, (int, float)):
+            year = int(year)
+            if 1950 <= year <= 2030:
+                print(f"Age-based estimate for {os.path.basename(file_path)}: "
+                      f"{year} ({data.get('confidence', '?')}) — {data.get('reasoning', '')[:80]}")
+                return {
+                    "year": year,
+                    "confidence": data.get("confidence", "low"),
+                    "reasoning": data.get("reasoning", ""),
+                    "people_seen": data.get("people_seen", []),
+                }
+        elif year is None:
+            print(f"Gemini could not estimate year for {os.path.basename(file_path)}: "
+                  f"{data.get('reasoning', 'unknown')[:80]}")
+            return None
         return None
     except Exception as e:
         print(f"Gemini age-based estimation failed for {file_path}: {e}")

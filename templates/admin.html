@@ -187,6 +187,25 @@
         gap: 24px;
         overflow-y: auto;
     }
+    /* 3-column game layout */
+    .game-3col {
+        flex: 1; display: grid; grid-template-columns: 340px 1fr 220px;
+        gap: 16px; padding: 16px; overflow: hidden;
+    }
+    .game-col {
+        display: flex; flex-direction: column; overflow-y: auto;
+        background: var(--bg-surface); border-radius: 12px; padding: 16px;
+        border: 1px solid var(--border-color);
+    }
+    .game-col-admin { overflow-y: auto; }
+    .game-col-display { padding: 8px; }
+    .game-col-phone { padding: 8px; max-width: 220px; }
+    .col-label { font-size: 11px; color: var(--text-muted); text-align: center; margin-bottom: 6px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
+    .preview-iframe { width: 100%; flex: 1; border: 1px solid var(--border-color); border-radius: 8px; background: #000; min-height: 200px; }
+    @media (max-width: 900px) {
+        .game-3col { grid-template-columns: 1fr; overflow-y: auto; }
+        .game-col-phone { max-width: 100%; }
+    }
     .qr-display {
         background: #fff;
         border-radius: 16px;
@@ -225,7 +244,7 @@
         width: 100%;
         max-width: 600px;
     }
-    .game-controls-simple .big-btn { flex: 1; min-height: 72px; font-size: 20px; }
+    .game-controls-simple .big-btn { flex: 1; min-height: 52px; font-size: 16px; }
     .game-slide-info {
         font-size: 16px;
         color: var(--text-muted);
@@ -306,19 +325,28 @@
         content: 'ON'; left: 10px; right: auto; color: #fff;
     }
 
-    /* ─ Experience two-panel layout ─ */
+    /* ─ Experience layout: left settings | center grid | right panel ─ */
     .exp-layout {
-        display: grid; grid-template-columns: minmax(280px, 20%) 1fr; gap: 16px; align-items: start;
+        display: grid; grid-template-columns: minmax(280px, 20%) 1fr minmax(220px, 16%); gap: 16px; align-items: start;
         height: calc(100vh - 100px); width: 100%;
     }
     .exp-layout.has-detail {
         grid-template-columns: minmax(260px, 18%) 1fr minmax(320px, 28%);
     }
+    /* When detail is open, sessions panel hides */
+    .exp-layout.has-detail .exp-sessions { display: none; }
     @media (max-width: 1100px) {
-        .exp-layout { grid-template-columns: 260px 1fr; }
+        .exp-layout { grid-template-columns: 260px 1fr 200px; }
         .exp-layout.has-detail { grid-template-columns: 240px 1fr 300px; }
     }
     @media (max-width: 900px) { .exp-layout { grid-template-columns: 1fr; } .exp-layout.has-detail { grid-template-columns: 1fr; } }
+    .exp-sessions {
+        background: var(--bg-surface); border: 1px solid var(--border-color);
+        border-radius: 12px; padding: 16px; overflow-y: auto;
+        max-height: calc(100vh - 100px); position: sticky; top: 12px;
+        grid-column: 3;
+    }
+    .exp-sessions:empty { display: none; }
     .exp-detail {
         background: var(--bg-surface); border: 1px solid var(--border-color);
         border-radius: 12px; display: none; flex-direction: column; overflow: hidden;
@@ -770,16 +798,6 @@
         <div id="step-shows" style="display:none;"></div>
         <div id="step-play" style="display:none;"></div>
 
-        <!-- Past Sessions -->
-        <div id="history-section" style="margin-top:24px;">
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
-                <span style="font-size:15px; font-weight:600;" data-t="admin.past_sessions">Past Sessions</span>
-                <button class="btn btn-secondary" onclick="loadHistory()" style="min-height:32px; font-size:12px; padding:4px 12px;">
-                    &#8635; <span data-t="admin.refresh">Refresh</span>
-                </button>
-            </div>
-            <div id="history-list" style="font-size:13px; color:var(--text-muted);">Loading...</div>
-        </div>
     </div>
 
     <!-- ═══ Import Photos Section ═══ -->
@@ -990,38 +1008,55 @@
     </div>
 </div>
 
-<!-- ═══ Game Control Overlay (simplified) ═══ -->
+<!-- ═══ Game Control Overlay (3-column layout) ═══ -->
 <div class="game-overlay" id="game-overlay">
     <div class="game-top">
-        <div style="display:flex; align-items:center; gap:12px;">
+        <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
             <h2 id="game-title" data-t="admin.live_show">Live Show</h2>
-            <span id="conn-status" style="font-size:11px; padding:3px 10px; border-radius:12px; background:#16a34a; color:#fff; font-weight:600; transition:background 0.3s;">Connected</span>
+            <span id="game-exp-name" style="font-size:14px; color:var(--text-muted); font-weight:500;"></span>
+            <span id="game-room-badge" style="font-size:12px; padding:3px 10px; border-radius:8px; background:rgba(255,255,255,0.08); color:var(--accent-light-blue); font-weight:700; font-family:monospace;"></span>
+            <span id="conn-status" style="font-size:11px; padding:3px 10px; border-radius:12px; background:#16a34a; color:#fff; font-weight:600;">Connected</span>
         </div>
-        <button class="big-btn big-btn-danger" onclick="endGame()" style="max-width:160px; min-height:44px; font-size:16px;" data-t="admin.end_show">
-            End Show
+        <div style="display:flex; gap:10px; align-items:center;">
+            <button class="big-btn big-btn-secondary" onclick="gamePause()" id="btn-pause" style="min-height:36px; font-size:13px; padding:6px 16px;" data-t="admin.pause_resume">Pause</button>
+            <button class="big-btn big-btn-secondary" onclick="toggleLockRoom()" id="btn-lock" style="min-height:36px; font-size:13px; padding:6px 16px;" data-t="admin.lock_room">Lock</button>
+            <button class="big-btn big-btn-danger" onclick="endGame()" style="min-height:36px; font-size:13px; padding:6px 16px;" data-t="admin.end_show">End Show</button>
+        </div>
+    </div>
+
+    <!-- Lobby section (centered, before game starts) -->
+    <div id="game-lobby-section" class="game-center">
+        <div class="qr-instruction" data-t="admin.qr_instruction">Ask everyone to scan this code with their phone:</div>
+        <div class="qr-display"><img id="game-qr" src="" alt="QR Code"></div>
+        <div class="qr-code-text" id="game-room-code"></div>
+        <div class="qr-url" id="game-join-url"></div>
+        <div class="player-count-big" id="game-player-count">0 players joined</div>
+        <div id="lobby-player-list" style="max-width:400px; margin:12px auto 0; text-align:left;"></div>
+        <button class="big-btn big-btn-success" onclick="gameStart()" style="max-width:400px; margin-top:16px;">
+            <span class="btn-icon">&#9654;</span> <span data-t="admin.start_show">Start the Show!</span>
         </button>
     </div>
-    <div class="game-center">
-        <!-- QR / Join section (shown in lobby) -->
-        <div id="game-lobby-section">
-            <div class="qr-instruction" data-t="admin.qr_instruction">Ask everyone to scan this code with their phone:</div>
-            <div class="qr-display"><img id="game-qr" src="" alt="QR Code"></div>
-            <div class="qr-code-text" id="game-room-code"></div>
-            <div class="qr-url" id="game-join-url"></div>
-            <div class="player-count-big" id="game-player-count">0 players joined</div>
-            <div id="lobby-player-list" style="max-width:400px; margin:12px auto 0; text-align:left;"></div>
-            <button class="big-btn big-btn-success" onclick="gameStart()" style="max-width:400px; margin-top:16px;">
-                <span class="btn-icon">&#9654;</span> <span data-t="admin.start_show">Start the Show!</span>
-            </button>
-        </div>
 
-        <!-- Playing section (shown during game) -->
-        <div id="game-playing-section" style="display:none; width:100%; max-width:700px;">
+    <!-- Playing section (3-column layout) -->
+    <div id="game-playing-section" class="game-3col" style="display:none;">
+        <!-- Column 1: Admin Controls -->
+        <div class="game-col game-col-admin">
             <div class="game-slide-info" id="gp-slide-pos">Slide 1 of 10</div>
-            <div class="current-slide-preview" id="gp-preview" style="margin:16px auto;"></div>
+            <div class="current-slide-preview" id="gp-preview"></div>
 
-            <!-- Simple 3-button controls -->
-            <div class="game-controls-simple">
+            <!-- Frame auto-advance timer bar -->
+            <div id="gp-frame-timer" style="display:none; margin:8px 0;">
+                <div style="display:flex; justify-content:space-between; font-size:11px; color:var(--text-muted); margin-bottom:3px;">
+                    <span>Auto-advance</span>
+                    <span id="gp-frame-countdown">0s</span>
+                </div>
+                <div style="height:5px; background:var(--bg-body); border-radius:3px; overflow:hidden;">
+                    <div id="gp-frame-bar" style="height:100%; background:var(--accent-light-blue); border-radius:3px; transition:width 0.3s linear; width:100%;"></div>
+                </div>
+            </div>
+
+            <!-- Controls -->
+            <div class="game-controls-simple" style="margin-top:12px;">
                 <button class="big-btn big-btn-secondary" onclick="gamePrev()">
                     <span class="btn-icon">&#9664;</span> <span data-t="admin.previous">Back</span>
                 </button>
@@ -1033,53 +1068,32 @@
                 </button>
             </div>
 
-            <!-- Live stats (only visible during game questions) -->
-            <div id="gp-stats" style="display:none; margin-top:20px; max-width:500px; margin-left:auto; margin-right:auto;">
-                <div style="display:flex; justify-content:space-between; margin-bottom:8px;">
-                    <span style="font-size:14px; color:var(--text-muted);" data-t="admin.live_answers">Answers</span>
-                    <span style="font-size:14px; font-weight:600;" id="gp-answered-count">0 / 0</span>
+            <!-- Live stats -->
+            <div id="gp-stats" style="display:none; margin-top:12px;">
+                <div style="display:flex; justify-content:space-between; margin-bottom:6px;">
+                    <span style="font-size:13px; color:var(--text-muted);" data-t="admin.live_answers">Answers</span>
+                    <span style="font-size:13px; font-weight:600;" id="gp-answered-count">0 / 0</span>
                 </div>
                 <div id="gp-stat-bars"></div>
             </div>
 
-            <!-- Live Scoreboard (always visible) -->
-            <div class="live-scoreboard" id="live-scoreboard">
+            <!-- Live Scoreboard -->
+            <div class="live-scoreboard" id="live-scoreboard" style="margin-top:12px;">
                 <h3>&#127942; <span data-t="admin.players">Players</span> <span class="count" id="sb-player-count">0</span></h3>
                 <div id="sb-rows"></div>
             </div>
+        </div>
 
-            <button class="advanced-toggle" onclick="toggleAdvanced('advanced-game')" style="display:block; margin:16px auto 0;" data-t="admin.more_controls">
-                More controls (pause, lock room)
-            </button>
-            <div id="advanced-game" class="advanced-section" style="max-width:500px; margin:0 auto;">
-                <div class="btn-row" style="flex-wrap:wrap;">
-                    <button class="big-btn big-btn-secondary" onclick="gamePause()" id="btn-pause" style="font-size:14px; min-height:48px;" data-t="admin.pause_resume">
-                        Pause / Resume
-                    </button>
-                    <button class="big-btn big-btn-secondary" onclick="toggleLockRoom()" id="btn-lock" style="font-size:14px; min-height:48px;" data-t="admin.lock_room">
-                        Lock Room
-                    </button>
-                </div>
-            </div>
+        <!-- Column 2: Projector Screen -->
+        <div class="game-col game-col-display">
+            <div class="col-label">Projector Screen</div>
+            <iframe id="preview-display" title="Projector screen preview" class="preview-iframe preview-iframe-display" sandbox="allow-scripts allow-same-origin"></iframe>
+        </div>
 
-            <!-- Live Preview Panels -->
-            <div style="margin-top:20px;">
-                <button class="advanced-toggle" onclick="toggleAdvanced('preview-panels')" style="display:block; margin:0 auto;">
-                    Live Preview (Display + Phone)
-                </button>
-                <div id="preview-panels" class="advanced-section" style="max-width:100%;">
-                    <div style="display:flex; gap:12px; flex-wrap:wrap; justify-content:center; margin-top:12px;">
-                        <div style="flex:2; min-width:300px;">
-                            <div style="font-size:11px; color:var(--text-muted); margin-bottom:4px; text-align:center;">Projector Screen</div>
-                            <iframe id="preview-display" title="Projector screen preview" style="width:100%; height:280px; border:1px solid var(--border-color); border-radius:8px; background:#000;" sandbox="allow-scripts allow-same-origin"></iframe>
-                        </div>
-                        <div style="flex:1; min-width:160px; max-width:200px;">
-                            <div style="font-size:11px; color:var(--text-muted); margin-bottom:4px; text-align:center;">Player Phone</div>
-                            <iframe id="preview-player" title="Player phone preview" style="width:100%; height:280px; border:1px solid var(--border-color); border-radius:8px; background:#000;" sandbox="allow-scripts allow-same-origin"></iframe>
-                        </div>
-                    </div>
-                </div>
-            </div>
+        <!-- Column 3: Player Phone -->
+        <div class="game-col game-col-phone">
+            <div class="col-label">Player Phone</div>
+            <iframe id="preview-player" title="Player phone preview" class="preview-iframe preview-iframe-phone" sandbox="allow-scripts allow-same-origin"></iframe>
         </div>
     </div>
 </div>
@@ -1249,9 +1263,8 @@
         experiences = await expRes.json();
         renderShowList();
 
-        // Active rooms + past sessions
+        // Active rooms
         await refreshActiveRooms();
-        loadHistory();
 
         // Step 3
         document.getElementById('step-play').style.display = experiences.length > 0 ? '' : 'none';
@@ -1318,6 +1331,8 @@
         overlay.classList.add('active');
         document.getElementById('game-qr').src = `data:image/png;base64,${data.qr_b64}`;
         document.getElementById('game-room-code').textContent = code;
+        document.getElementById('game-exp-name').textContent = data.experience_name || '';
+        document.getElementById('game-room-badge').textContent = code;
         try {
             const u = new URL(data.join_url);
             document.getElementById('game-join-url').textContent = `${u.host}/play`;
@@ -1340,47 +1355,54 @@
             await fetch(`/api/rooms/${code}`, { method: 'DELETE' });
             toast('Room ended');
             refreshActiveRooms();
-            loadHistory();
         });
     }
 
-    async function loadHistory() {
-        const list = document.getElementById('history-list');
+    async function loadHistory(expId) {
+        const section = document.getElementById('exp-history-section');
+        const list = document.getElementById('exp-history-list');
+        if (!section || !list) return;
         try {
-            const res = await fetch('/api/rooms/history');
+            const res = await fetch(`/api/rooms/history?experience_id=${expId}`);
             const sessions = await res.json();
             if (sessions.length === 0) {
-                list.innerHTML = `<div style="color:var(--text-muted); padding:12px; text-align:center;">${t('admin.no_past_sessions') || 'No past sessions yet.'}</div>`;
+                section.style.display = 'none';
                 return;
             }
+            section.style.display = '';
             list.innerHTML = sessions.map(s => {
-                const date = s.created_at ? new Date(s.created_at).toLocaleString() : '?';
+                const date = s.created_at ? new Date(s.created_at).toLocaleString(undefined, {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'}) : '?';
                 const playerCount = s.players.length;
-                const topPlayer = s.players[0];
                 const accuracy = s.total_answers > 0 ? Math.round(s.correct_answers / s.total_answers * 100) : 0;
-                const playerList = s.players.map((p, i) =>
-                    `<span style="display:inline-flex; align-items:center; gap:4px; margin-right:10px;">${i === 0 ? '&#129351;' : i === 1 ? '&#129352;' : i === 2 ? '&#129353;' : ''}  <b>${escapeHtml(p.nickname)}</b> <span style="color:var(--accent-light-blue);">${p.score}pts</span></span>`
-                ).join('');
+                const playerList = s.players.slice(0, 5).map((p, i) =>
+                    `<span style="white-space:nowrap;">${i === 0 ? '&#129351;' : i === 1 ? '&#129352;' : i === 2 ? '&#129353;' : ''} ${escapeHtml(p.nickname)} <b>${p.score}</b></span>`
+                ).join(' &middot; ');
                 return `
-                <div style="background:var(--bg-surface); border:1px solid var(--border-color); border-radius:10px; padding:12px 16px; margin-bottom:8px;">
-                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
-                        <div>
-                            <span style="font-weight:700; font-size:14px; color:#fff;">${escapeHtml(s.experience_name)}</span>
-                            <span style="font-size:11px; color:var(--text-muted); margin-left:8px;">${date}</span>
+                <div style="padding:8px 0; border-bottom:1px solid var(--border-color);">
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                        <span style="color:var(--text-secondary);">${date}</span>
+                        <div style="display:flex; gap:4px; align-items:center;">
+                            <span style="font-size:10px; padding:1px 6px; border-radius:4px; background:#64748b; color:#fff;">${escapeHtml(s.code)}</span>
+                            <button onclick="deleteSession('${escapeHtml(s.code)}', ${expId})" style="background:none; border:none; color:#ef4444; cursor:pointer; font-size:12px; padding:2px;" title="${t('admin.delete') || 'Delete'}">&#10005;</button>
                         </div>
-                        <span style="font-size:11px; padding:2px 8px; border-radius:4px; background:#64748b; color:#fff;">${escapeHtml(s.code)}</span>
                     </div>
-                    <div style="font-size:12px; color:var(--text-secondary); margin-bottom:4px;">
-                        ${playerCount} ${playerCount === 1 ? 'player' : 'players'} &middot;
-                        ${s.total_answers} ${t('admin.answers') || 'answers'} &middot;
-                        ${accuracy}% ${t('admin.correct') || 'correct'}
+                    <div style="color:var(--text-muted); margin-top:2px;">
+                        ${playerCount} player${playerCount !== 1 ? 's' : ''} &middot; ${accuracy}% ${t('admin.correct') || 'correct'}
                     </div>
-                    ${playerCount > 0 ? `<div style="font-size:12px; margin-top:4px;">${playerList}</div>` : ''}
+                    ${playerCount > 0 ? `<div style="margin-top:3px; color:var(--text-secondary);">${playerList}</div>` : ''}
                 </div>`;
             }).join('');
         } catch(e) {
-            list.innerHTML = '<div style="color:var(--text-muted);">Could not load history</div>';
+            section.style.display = 'none';
         }
+    }
+
+    async function deleteSession(code, expId) {
+        showConfirmDialog(t('admin.delete_session_confirm') || 'Delete this session and all its scores?', async () => {
+            await fetch(`/api/rooms/${code}/history`, { method: 'DELETE' });
+            toast(t('admin.session_deleted') || 'Session deleted');
+            loadHistory(expId);
+        });
     }
 
     function renderShowList() {
@@ -1795,6 +1817,7 @@
         allMediaList = pickerData; // backward compat for template references
         showSection('editor');
         renderExperienceEditor();
+        loadHistory(id);
     }
 
     let showSelectedForRemoval = new Set();
@@ -1895,7 +1918,7 @@
                     </div>
                 </div>
 
-                <!-- RIGHT: Show contents panel -->
+                <!-- CENTER: Show contents panel -->
                 <div class="exp-right">
                     <div class="exp-right-header" style="flex-wrap:wrap; gap:8px;">
                         <input type="text" id="show-search" placeholder="Search..." oninput="filterShowGrid()"
@@ -1927,7 +1950,13 @@
                     </div>
                 </div>
 
-                <!-- RIGHT DETAIL: Quiz / Slide detail panel -->
+                <!-- RIGHT: Past Sessions (hidden when slide detail is open) -->
+                <div class="exp-sessions" id="exp-history-section">
+                    <div style="font-size:14px; font-weight:700; margin-bottom:12px; color:var(--accent-light-blue); font-family:var(--font-heading);">${t('admin.past_sessions') || 'Past Sessions'}</div>
+                    <div id="exp-history-list" style="font-size:12px;"></div>
+                </div>
+
+                <!-- RIGHT DETAIL: Quiz / Slide detail panel (replaces sessions) -->
                 <div class="exp-detail" id="slide-detail-column">
                     <div class="exp-detail-header">
                         <span class="title">Slide Detail</span>
@@ -2925,6 +2954,8 @@
         overlay.classList.add('active');
         document.getElementById('game-qr').src = `data:image/png;base64,${data.qr_b64}`;
         document.getElementById('game-room-code').textContent = data.code;
+        document.getElementById('game-exp-name').textContent = data.experience_name || '';
+        document.getElementById('game-room-badge').textContent = data.code;
         try {
             const u = new URL(data.join_url);
             document.getElementById('game-join-url').textContent = `${u.host}/play`;
@@ -2973,6 +3004,7 @@
             updateCurrentSlide(data.slide);
         });
         socket.on('slide_changed', (data) => updateCurrentSlide(data.slide));
+        socket.on('frame_timer', (data) => startFrameTimer(data.duration, data.deadline));
         socket.on('live_stats', (data) => updateLiveStats(data));
         socket.on('reveal', (data) => {
             if (data.stats) updateLiveStats(data.stats);
@@ -2981,10 +3013,24 @@
         });
         socket.on('paused', () => { isPaused = true; });
         socket.on('resumed', () => { isPaused = false; });
-        socket.on('game_finished', () => {
+        socket.on('game_finished', (data) => {
             toast(t('admin.show_finished') || 'Show finished!');
-            document.getElementById('game-overlay').classList.remove('active');
-            currentRoomCode = null;
+            // Show final results in admin column instead of closing overlay
+            const preview = document.getElementById('gp-preview');
+            if (preview) {
+                const lb = data?.leaderboard || [];
+                preview.innerHTML = `
+                    <div style="text-align:center; padding:16px 0;">
+                        <div style="font-size:20px; font-weight:700; margin-bottom:12px;">&#127942; ${t('admin.final_results') || 'Final Results'}</div>
+                        ${lb.map((p, i) => `<div style="display:flex; align-items:center; gap:8px; padding:6px 8px; font-size:14px;">
+                            <span style="min-width:20px; font-weight:700; color:${i===0?'#fbbf24':i===1?'#94a3b8':i===2?'#d97706':'var(--text-muted)'};">${i+1}</span>
+                            <span style="flex:1;">${p.nickname}</span>
+                            <span style="font-weight:700; color:var(--accent-light-blue);">${p.score}</span>
+                        </div>`).join('')}
+                    </div>`;
+            }
+            document.getElementById('gp-slide-pos').textContent = t('admin.show_finished') || 'Show finished!';
+            stopFrameTimer();
         });
         socket.on('show_leaderboard', () => {});
     }
@@ -2998,9 +3044,9 @@
         // Update lobby player list (names + kick)
         const lobbyList = document.getElementById('lobby-player-list');
         if (lobbyList) {
-            lobbyList.innerHTML = players.map(p => `
+            lobbyList.innerHTML = players.map((p, i) => `
                 <div style="display:flex; align-items:center; justify-content:space-between; padding:6px 10px; margin:4px 0; background:var(--bg-surface); border-radius:8px; font-size:14px;">
-                    <span>${escapeHtml(p.nickname)}</span>
+                    <span><span style="color:var(--text-muted); margin-right:6px;">Player ${i + 1}:</span> ${escapeHtml(p.nickname)}</span>
                     <button onclick="removePlayer(${p.id})" style="background:none; border:none; color:var(--text-muted); cursor:pointer; padding:4px 8px; font-size:16px;" title="Kick player">&#10005;</button>
                 </div>
             `).join('');
@@ -3041,9 +3087,36 @@
         }).join('');
     }
 
+    let frameTimerInterval = null;
+    function startFrameTimer(duration, deadline) {
+        const timerEl = document.getElementById('gp-frame-timer');
+        const countdownEl = document.getElementById('gp-frame-countdown');
+        const barEl = document.getElementById('gp-frame-bar');
+        if (!timerEl) return;
+        clearInterval(frameTimerInterval);
+        timerEl.style.display = '';
+        const endTime = deadline || (Date.now() + duration * 1000);
+        const totalMs = duration * 1000;
+        frameTimerInterval = setInterval(() => {
+            const remaining = Math.max(0, (endTime - Date.now()) / 1000);
+            countdownEl.textContent = `${Math.ceil(remaining)}s`;
+            barEl.style.width = `${(remaining / duration) * 100}%`;
+            if (remaining <= 0) {
+                clearInterval(frameTimerInterval);
+                timerEl.style.display = 'none';
+            }
+        }, 200);
+    }
+    function stopFrameTimer() {
+        clearInterval(frameTimerInterval);
+        const el = document.getElementById('gp-frame-timer');
+        if (el) el.style.display = 'none';
+    }
+
     function updateCurrentSlide(slide) {
         if (!slide) return;
         currentGameSlide = slide;
+        stopFrameTimer(); // Reset frame timer on any slide change
         document.getElementById('gp-slide-pos').textContent = tReplace('admin.slide_position', {current: slide.index + 1, total: slide.total}) || `Slide ${slide.index + 1} of ${slide.total}`;
         const preview = document.getElementById('gp-preview');
         const stats = document.getElementById('gp-stats');
