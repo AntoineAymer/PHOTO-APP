@@ -187,7 +187,7 @@
     "enter_nickname": "Choisissez un surnom pour le classement",
     "nickname_placeholder": "ex. Marie D",
     "join": "Rejoindre",
-    "code_error": "Entrez un code de salle à 5 caractères",
+    "code_error": "Entrez le code de la salle",
     "name_error": "Le nom doit contenir au moins 2 caractères",
     "waiting": "En attente du lancement par l'animateur",
     "room_full": "Cette salle est pleine (30/30 joueurs). Patientez ou demandez à l'animateur.",
