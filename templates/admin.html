@@ -1154,6 +1154,7 @@
             <span id="conn-status" style="font-size:11px; padding:3px 10px; border-radius:12px; background:#16a34a; color:#fff; font-weight:600;">Connected</span>
         </div>
         <button class="big-btn big-btn-secondary" onclick="toggleIntermission()" id="btn-intermission" style="min-height:36px; font-size:13px; padding:6px 16px;" data-t="admin.intermission">Intermission</button>
+        <button class="big-btn big-btn-secondary" onclick="editDuringGame()" id="btn-edit-quizzes" style="display:none; min-height:36px; font-size:13px; padding:6px 16px; background:rgba(18,171,219,0.15); color:var(--accent-light-blue); border-color:rgba(18,171,219,0.4);">&#9998; Edit Quizzes</button>
         <button class="big-btn big-btn-danger" onclick="endGame()" id="btn-end-game" style="min-height:36px; font-size:13px; padding:6px 16px;" data-t="admin.end_show">End</button>
     </div>
 
@@ -4158,6 +4159,8 @@
                 btn.textContent = t('admin.resume_intermission') || 'Resume Game';
                 btn.className = 'big-btn big-btn-success';
             }
+            const editBtn = document.getElementById('btn-edit-quizzes');
+            if (editBtn) editBtn.style.display = '';
             // Show reclaim progress in scoreboard area
             updateIntermissionStatus(data.players || []);
         });
@@ -4172,6 +4175,10 @@
                 btn.textContent = t('admin.intermission') || 'Intermission';
                 btn.className = 'big-btn big-btn-secondary';
             }
+            const editBtn = document.getElementById('btn-edit-quizzes');
+            if (editBtn) editBtn.style.display = 'none';
+            // If admin was editing, bring them back to game
+            returnToGame();
         });
     }
 
@@ -4421,6 +4428,34 @@
     }
 
     let isIntermission = false;
+    let _editingDuringGame = false;
+
+    function editDuringGame() {
+        if (!isIntermission || !currentExperience) return;
+        _editingDuringGame = true;
+        document.getElementById('game-overlay').classList.remove('active');
+        // Open the experience editor
+        openExperience(currentExperience.id);
+        // Show a floating "Back to Game" bar
+        let bar = document.getElementById('back-to-game-bar');
+        if (!bar) {
+            bar = document.createElement('div');
+            bar.id = 'back-to-game-bar';
+            bar.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:8000;background:linear-gradient(90deg,#0070AD,#12ABDB);padding:8px 20px;display:flex;align-items:center;justify-content:space-between;box-shadow:0 2px 12px rgba(0,0,0,0.4);';
+            bar.innerHTML = `<span style="color:#fff;font-weight:700;font-size:14px;">Game paused — editing quizzes</span>
+                <button onclick="returnToGame()" style="background:#fff;color:#0070AD;border:none;padding:8px 20px;border-radius:6px;font-weight:700;font-size:13px;cursor:pointer;">Back to Game</button>`;
+            document.body.appendChild(bar);
+        }
+        bar.style.display = 'flex';
+    }
+
+    function returnToGame() {
+        if (!_editingDuringGame) return;
+        _editingDuringGame = false;
+        const bar = document.getElementById('back-to-game-bar');
+        if (bar) bar.style.display = 'none';
+        document.getElementById('game-overlay').classList.add('active');
+    }
 
     function toggleIntermission() {
         if (isIntermission) {
