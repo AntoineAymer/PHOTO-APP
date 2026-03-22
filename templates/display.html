@@ -1197,9 +1197,11 @@
     function sfxWrong() { playSfx('wrong'); }
     function sfxLeaderboard() { playSfx('leaderboard'); }
 
-    // ═══ Fullscreen on click ═══
+    // ═══ Fullscreen toggle on click ═══
     document.addEventListener('click', () => {
-        if (!document.fullscreenElement) {
+        if (document.fullscreenElement) {
+            document.exitFullscreen?.();
+        } else {
             document.documentElement.requestFullscreen?.();
         }
         if (audioCtx?.state === 'suspended') audioCtx.resume();

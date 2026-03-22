@@ -1452,9 +1452,13 @@
     }
 
     async function bulkDeleteAll() {
-        const n = allSessions.length;
-        showConfirmDialog(`Delete ALL ${n} session${n !== 1 ? 's' : ''} and their scores? This cannot be undone.`, async () => {
-            await fetch(`/api/rooms/bulk-delete?experience_id=${historyExpId}`, { method: 'DELETE' });
+        const filtered = historyFilter === 'with_players'
+            ? allSessions.filter(s => s.players.length > 0)
+            : allSessions;
+        const n = filtered.length;
+        const filterParam = historyFilter === 'with_players' ? '&with_players_only=true' : '';
+        showConfirmDialog(`Delete ${n} session${n !== 1 ? 's' : ''} and their scores? This cannot be undone.`, async () => {
+            await fetch(`/api/rooms/bulk-delete?experience_id=${historyExpId}${filterParam}`, { method: 'DELETE' });
             toast(`${n} sessions deleted`);
             loadHistory(historyExpId);
         });
@@ -2441,55 +2445,64 @@
     document.addEventListener('mousedown', (e) => {
         const grid = e.target.closest('.show-grid');
         if (!grid || e.button !== 0 || e.shiftKey || e.ctrlKey || e.metaKey) return;
-        // Only start lasso if clicking on the grid background (not on an item)
         if (e.target.closest('.sg-item')) return;
-        lassoActive = true;
+        // Pending — only becomes real lasso after 15px drag
+        lassoActive = 'pending';
         lassoStartX = e.clientX;
         lassoStartY = e.clientY;
-        lassoEl = document.createElement('div');
-        lassoEl.className = 'lasso-rect';
-        document.body.appendChild(lassoEl);
         e.preventDefault();
     });
 
     document.addEventListener('mousemove', (e) => {
-        if (!lassoActive || !lassoEl) return;
-        const x = Math.min(e.clientX, lassoStartX);
-        const y = Math.min(e.clientY, lassoStartY);
+        if (!lassoActive) return;
         const w = Math.abs(e.clientX - lassoStartX);
         const h = Math.abs(e.clientY - lassoStartY);
+        if (lassoActive === 'pending' && w < 15 && h < 15) return;
+        if (lassoActive === 'pending') {
+            lassoActive = true;
+            lassoEl = document.createElement('div');
+            lassoEl.className = 'lasso-rect';
+            document.body.appendChild(lassoEl);
+        }
+        if (!lassoEl) return;
+        const x = Math.min(e.clientX, lassoStartX);
+        const y = Math.min(e.clientY, lassoStartY);
         lassoEl.style.left = x + 'px';
         lassoEl.style.top = y + 'px';
         lassoEl.style.width = w + 'px';
         lassoEl.style.height = h + 'px';
-        // Highlight items inside lasso
-        if (w > 10 || h > 10) {
-            const lassoRect = { left: x, top: y, right: x + w, bottom: y + h };
-            document.querySelectorAll('.sg-item').forEach(el => {
-                const r = el.getBoundingClientRect();
-                const inside = r.left < lassoRect.right && r.right > lassoRect.left &&
-                               r.top < lassoRect.bottom && r.bottom > lassoRect.top;
-                el.classList.toggle('lasso-hover', inside);
-            });
-        }
+        const lassoRect = { left: x, top: y, right: x + w, bottom: y + h };
+        document.querySelectorAll('.sg-item').forEach(el => {
+            const r = el.getBoundingClientRect();
+            const inside = r.left < lassoRect.right && r.right > lassoRect.left &&
+                           r.top < lassoRect.bottom && r.bottom > lassoRect.top;
+            el.classList.toggle('lasso-hover', inside);
+        });
     });
 
     document.addEventListener('mouseup', (e) => {
         if (!lassoActive) return;
+        const wasDragging = lassoActive === true;
         lassoActive = false;
-        const w = Math.abs(e.clientX - lassoStartX);
-        const h = Math.abs(e.clientY - lassoStartY);
-        if (lassoEl && (w > 10 || h > 10)) {
-            // Select all items inside lasso
+        if (wasDragging && lassoEl) {
+            // Lasso completed — select items inside
             document.querySelectorAll('.sg-item.lasso-hover').forEach(el => {
                 const slideId = parseInt(el.dataset.slideId);
                 showSelectedForRemoval.add(slideId);
                 el.classList.add('selected-remove');
             });
             updateShowRemoveCount();
+        } else {
+            // Simple click on empty grid space — deselect all
+            if (showSelectedForRemoval.size > 0) showSelectNone();
         }
         document.querySelectorAll('.sg-item.lasso-hover').forEach(el => el.classList.remove('lasso-hover'));
         if (lassoEl) { lassoEl.remove(); lassoEl = null; }
+    });
+
+    // Escape key deselects all
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && showSelectedForRemoval.size > 0) showSelectNone();
     });
 
     let _silhouettePollTimer = null;

@@ -75,8 +75,19 @@ def load_locale(lang="en"):
 
 # ── Server hostname ───────────────────────────────────────────────────────────
 def get_server_host():
-    """Get LAN IP for mobile-reachable access. Prefer IP over .local (more universal)."""
+    """Get hostname for QR codes and join URLs.
+    Priority: SERVER_HOST env > photoframe.local (if resolves) > LAN IP."""
     import subprocess
+    env_host = os.environ.get("SERVER_HOST")
+    if env_host:
+        return env_host
+    # Check if photoframe.local resolves (mDNS)
+    try:
+        import socket as _sock
+        _sock.getaddrinfo("photoframe.local", None, _sock.AF_INET, _sock.SOCK_STREAM)
+        return "photoframe.local"
+    except Exception:
+        pass
     for iface in ("en0", "en1"):
         try:
             ip = subprocess.check_output(
@@ -1817,18 +1828,24 @@ async def delete_room_history(code: str, db=Depends(get_db)):
 
 
 @app.delete("/api/rooms/bulk-delete")
-async def bulk_delete_rooms(experience_id: int = None, empty_only: bool = False, db=Depends(get_db)):
-    """Bulk delete finished rooms. If empty_only=true, only delete rooms with 0 players."""
-    query = select(Room).where(Room.state == GameState.FINISHED)
+async def bulk_delete_rooms(experience_id: int = None, empty_only: bool = False,
+                            with_players_only: bool = False, db=Depends(get_db)):
+    """Bulk delete rooms. Deletes all states (not just FINISHED) so crashed sessions get cleaned up."""
+    query = select(Room)
     if experience_id:
         query = query.where(Room.experience_id == experience_id)
     result = await db.execute(query)
     rooms = result.scalars().all()
     deleted = 0
     for room in rooms:
+        # Skip rooms that are actively in-memory (playing right now)
+        if room.code in active_rooms and active_rooms[room.code].get("state") == "playing":
+            continue
         p_result = await db.execute(select(Player).where(Player.room_id == room.id))
         players = p_result.scalars().all()
         if empty_only and len(players) > 0:
+            continue
+        if with_players_only and len(players) == 0:
             continue
         for p in players:
             await db.execute(delete(PlayerAnswer).where(PlayerAnswer.player_id == p.id))
