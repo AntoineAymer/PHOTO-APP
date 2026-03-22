@@ -2432,6 +2432,10 @@
                                 <div style="font-size:10px; color:var(--text-muted); margin-bottom:4px;">Quiz image</div>
                                 <div id="sdp-silhouette-container" style="position:relative; min-height:80px;">
                                     <img id="sdp-silhouette-img" style="width:100%; max-height:180px; border-radius:8px; object-fit:contain; background:#0f172a; display:none;">
+                                    <div id="sdp-sil-rotate-overlay" style="position:absolute; bottom:8px; right:8px; display:none; gap:3px;">
+                                        <button onclick="rotateSilhouette('left')" class="btn btn-secondary" style="padding:3px 6px; font-size:13px; min-height:28px; min-width:28px; background:rgba(30,41,59,0.85); backdrop-filter:blur(4px);" title="Rotate left">&#8634;</button>
+                                        <button onclick="rotateSilhouette('right')" class="btn btn-secondary" style="padding:3px 6px; font-size:13px; min-height:28px; min-width:28px; background:rgba(30,41,59,0.85); backdrop-filter:blur(4px);" title="Rotate right">&#8635;</button>
+                                    </div>
                                     <div id="sdp-silhouette-generating" style="display:none; position:absolute; inset:0; display:flex; align-items:center; justify-content:center; background:rgba(15,23,42,0.8); border-radius:8px;">
                                         <div style="text-align:center;">
                                             <div style="font-size:24px; animation:spin 1.5s linear infinite;">&#9881;</div>
@@ -3038,10 +3042,14 @@
                 silImg.src = slide.silhouette_url + '?t=' + Date.now();
                 silImg.style.display = '';
                 silGen.style.display = 'none';
+                const silRotate = document.getElementById('sdp-sil-rotate-overlay');
+                if (silRotate) silRotate.style.display = 'flex';
             } else {
                 // Still generating — show spinner and poll
                 silImg.style.display = 'none';
                 silGen.style.display = 'flex';
+                const silRotate2 = document.getElementById('sdp-sil-rotate-overlay');
+                if (silRotate2) silRotate2.style.display = 'none';
                 document.getElementById('sdp-gen-status').textContent = 'Generating...';
                 _silhouettePollTimer = setInterval(async () => {
                     try {
@@ -3220,6 +3228,28 @@
             }
         } catch (e) {
             status.textContent = `Error: ${e.message}`;
+        }
+    }
+
+    async function rotateSilhouette(direction) {
+        if (!activeSlideId) return;
+        const silImg = document.getElementById('sdp-silhouette-img');
+        if (silImg) silImg.style.opacity = '0.4';
+        try {
+            const res = await fetch(`/api/slides/${activeSlideId}/rotate-silhouette`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ direction })
+            });
+            if (!res.ok) throw new Error('Failed');
+            const bust = Date.now();
+            if (silImg) { silImg.src = `/api/slides/${activeSlideId}/silhouette?t=${bust}`; silImg.style.opacity = '1'; }
+            // Also refresh the grid pair image
+            const gridPairImgs = document.querySelectorAll(`.sg-item[data-slide-id="${activeSlideId}"] .sg-pair-wrap img:last-of-type`);
+            gridPairImgs.forEach(img => img.src = `/api/slides/${activeSlideId}/silhouette?t=${bust}`);
+        } catch (e) {
+            if (silImg) silImg.style.opacity = '1';
+            toast('Failed to rotate quiz image');
         }
     }
 

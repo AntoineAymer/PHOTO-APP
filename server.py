@@ -862,6 +862,30 @@ async def rotate_media(media_id: int, request: Request, db=Depends(get_db)):
     return {"ok": True}
 
 
+@app.post("/api/slides/{slide_id}/rotate-silhouette")
+async def rotate_silhouette(slide_id: int, request: Request, db=Depends(get_db)):
+    """Rotate the silhouette/quiz image 90 degrees left or right."""
+    data = await request.json()
+    direction = data.get("direction", "right")
+    slide = await db.get(Slide, slide_id)
+    if not slide or not slide.silhouette_path:
+        raise HTTPException(404, "No quiz image found")
+    sil_path = slide.silhouette_path
+    if not os.path.exists(sil_path):
+        raise HTTPException(404, "Quiz image file not found")
+
+    angle = -90 if direction == "right" else 90
+
+    def do_rotate():
+        from PIL import Image
+        img = Image.open(sil_path)
+        img = img.rotate(angle, expand=True)
+        img.save(sil_path)
+
+    await asyncio.to_thread(do_rotate)
+    return {"ok": True}
+
+
 @app.post("/api/media/{media_id}/analyze-zoom")
 async def analyze_zoom(media_id: int, db=Depends(get_db)):
     """Use Gemini to find an interesting detail for a Zoom In quiz."""
