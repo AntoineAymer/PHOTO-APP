@@ -229,16 +229,10 @@
         display: flex;
         align-items: center;
         gap: 20px;
-        padding: 24px 40px 16px;
+        padding: 12px 24px 8px;
     }
     .game-app-badge {
-        font-family: var(--font-heading);
-        font-size: 28px;
-        font-weight: 800;
-        color: #fff;
-        font-style: italic;
-        text-shadow: 0 2px 6px rgba(0,0,0,0.3);
-        flex-shrink: 0;
+        display: none;
     }
     .game-question-text {
         font-family: var(--font-heading);
@@ -299,21 +293,22 @@
     .game-body {
         flex: 1;
         display: flex;
-        padding: 0 40px;
-        gap: 30px;
+        padding: 0 24px;
+        gap: 24px;
         min-height: 0;
         align-items: center;
     }
     .game-silhouette-area {
-        flex: 1;
+        flex: 2;
         display: flex;
         align-items: center;
         justify-content: center;
         min-height: 0;
+        min-width: 0;
     }
     .game-silhouette-area img {
         max-width: 100%;
-        max-height: 55vh;
+        max-height: 75vh;
         object-fit: contain;
         border-radius: 16px;
         filter: drop-shadow(0 8px 32px rgba(0,0,0,0.4));
@@ -324,7 +319,8 @@
         flex-direction: column;
         gap: 12px;
         justify-content: center;
-        max-width: 550px;
+        max-width: 450px;
+        min-width: 280px;
     }
     /* Crowdpurr-style answer bars */
     .display-answer-bar {
@@ -738,6 +734,7 @@
     <!-- FRAME SLIDE -->
     <div id="d-frame" class="dscreen">
         <div class="media-container" id="frame-container"></div>
+        <div id="photo-year-badge" style="display:none; position:absolute; top:24px; left:24px; background:rgba(0,0,0,0.45); backdrop-filter:blur(8px); border-radius:10px; padding:6px 16px; color:#fff; font-size:clamp(18px,2.5vw,28px); font-weight:700; font-family:var(--font-heading,'Ubuntu',sans-serif); z-index:10; pointer-events:none; letter-spacing:1px; text-shadow:0 1px 4px rgba(0,0,0,0.5);"></div>
         <div id="score-overlay" style="display:none; position:absolute; bottom:16px; right:16px; background:rgba(0,0,0,0.5); backdrop-filter:blur(6px); border-radius:12px; padding:8px 16px; color:#fff; font-size:14px; z-index:10; pointer-events:none;">
             <span id="score-q-text" style="opacity:0.7;"></span>
             <span style="margin:0 6px; opacity:0.3;">|</span>
@@ -1013,11 +1010,13 @@
             document.getElementById('d-paused').style.display = 'flex';
         });
 
-        socket.on('resumed', () => {
+        socket.on('resumed', (data) => {
             document.getElementById('d-paused').style.display = 'none';
             // Resume video if it was paused
             const vid = document.querySelector('#frame-container video');
             if (vid && vid.paused && !vid.ended) vid.play().catch(()=>{});
+            // Restart frame timer if provided
+            if (data && data.timer) startTimer(data.timer.duration, data.timer.deadline);
         });
 
         socket.on('intermission', (data) => {
@@ -1211,6 +1210,15 @@
     function showFrameSlide(slide) {
         showDScreen('d-frame');
         updateScoreOverlay();
+        // Show year badge if date is available
+        const yearBadge = document.getElementById('photo-year-badge');
+        if (slide.exif_date) {
+            const year = new Date(slide.exif_date).getFullYear();
+            yearBadge.textContent = year;
+            yearBadge.style.display = '';
+        } else {
+            yearBadge.style.display = 'none';
+        }
         const container = document.getElementById('frame-container');
         const effect = experience?.transition_effect || 'fade';
         container.className = `media-container ${effect === 'fade' ? 'fade-enter' : ''} ${effect === 'kenburns' ? 'kenburns' : ''}`;
@@ -1251,6 +1259,7 @@
     function showGameSlide(slide) {
         showDScreen('d-game');
         document.getElementById('score-overlay').style.display = 'none';
+        document.getElementById('photo-year-badge').style.display = 'none';
         const silImg = document.getElementById('game-silhouette');
         silImg.onerror = () => { silImg.style.display = 'none'; };
         silImg.src = slide.silhouette_url || slide.media_url;
