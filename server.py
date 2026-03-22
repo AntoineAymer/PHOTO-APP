@@ -1789,6 +1789,34 @@ async def rooms_history(experience_id: int = None, db=Depends(get_db)):
     return history
 
 
+@app.delete("/api/rooms/bulk-delete")
+async def bulk_delete_rooms(experience_id: int = None, empty_only: bool = False,
+                            with_players_only: bool = False, db=Depends(get_db)):
+    """Bulk delete rooms. Deletes all states (not just FINISHED) so crashed sessions get cleaned up."""
+    query = select(Room)
+    if experience_id:
+        query = query.where(Room.experience_id == experience_id)
+    result = await db.execute(query)
+    rooms = result.scalars().all()
+    deleted = 0
+    for room in rooms:
+        # Skip rooms that are actively in-memory (playing right now)
+        if room.code in active_rooms and active_rooms[room.code].get("state") == "playing":
+            continue
+        p_result = await db.execute(select(Player).where(Player.room_id == room.id))
+        players = p_result.scalars().all()
+        if empty_only and len(players) > 0:
+            continue
+        if with_players_only and len(players) == 0:
+            continue
+        for p in players:
+            await db.execute(delete(PlayerAnswer).where(PlayerAnswer.player_id == p.id))
+        await db.execute(delete(Player).where(Player.room_id == room.id))
+        await db.delete(room)
+        deleted += 1
+    await db.commit()
+    return {"ok": True, "deleted": deleted}
+
 @app.delete("/api/rooms/{code}")
 async def delete_room(code: str, db=Depends(get_db)):
     """Kill a room — remove from memory and mark finished in DB."""
@@ -1825,35 +1853,6 @@ async def delete_room_history(code: str, db=Depends(get_db)):
     await db.delete(db_room)
     await db.commit()
     return {"ok": True}
-
-
-@app.delete("/api/rooms/bulk-delete")
-async def bulk_delete_rooms(experience_id: int = None, empty_only: bool = False,
-                            with_players_only: bool = False, db=Depends(get_db)):
-    """Bulk delete rooms. Deletes all states (not just FINISHED) so crashed sessions get cleaned up."""
-    query = select(Room)
-    if experience_id:
-        query = query.where(Room.experience_id == experience_id)
-    result = await db.execute(query)
-    rooms = result.scalars().all()
-    deleted = 0
-    for room in rooms:
-        # Skip rooms that are actively in-memory (playing right now)
-        if room.code in active_rooms and active_rooms[room.code].get("state") == "playing":
-            continue
-        p_result = await db.execute(select(Player).where(Player.room_id == room.id))
-        players = p_result.scalars().all()
-        if empty_only and len(players) > 0:
-            continue
-        if with_players_only and len(players) == 0:
-            continue
-        for p in players:
-            await db.execute(delete(PlayerAnswer).where(PlayerAnswer.player_id == p.id))
-        await db.execute(delete(Player).where(Player.room_id == room.id))
-        await db.delete(room)
-        deleted += 1
-    await db.commit()
-    return {"ok": True, "deleted": deleted}
 
 
 @app.post("/api/rooms")

@@ -83,7 +83,7 @@
     }
     /* Info side */
     .lobby-info-panel {
-        background: rgba(255,255,255,0.12);
+        background: rgba(0,0,0,0.55);
         backdrop-filter: blur(16px);
         -webkit-backdrop-filter: blur(16px);
         border-radius: 24px;
@@ -95,33 +95,30 @@
         gap: 20px;
         flex: 1;
     }
-    .lobby-app-name {
-        font-family: var(--font-heading);
-        font-size: 44px;
-        font-weight: 800;
-        color: #fff;
-        font-style: italic;
-        text-shadow: 0 2px 8px rgba(0,0,0,0.3);
-    }
     .lobby-room-code {
         font-family: var(--font-heading);
-        font-size: 56px;
+        font-size: 72px;
         font-weight: 900;
         color: #12ABDB;
-        letter-spacing: 6px;
+        letter-spacing: 8px;
         text-align: center;
-        text-shadow: 0 2px 12px rgba(18,171,219,0.3);
+        text-shadow: 0 0 30px rgba(18,171,219,0.6), 0 2px 12px rgba(0,0,0,0.5);
+        background: rgba(18,171,219,0.1);
+        border: 2px solid rgba(18,171,219,0.3);
+        border-radius: 16px;
+        padding: 12px 32px;
     }
     .lobby-room-code-label {
         font-size: 16px;
-        color: rgba(255,255,255,0.6);
+        color: rgba(255,255,255,0.7);
         text-transform: uppercase;
-        letter-spacing: 2px;
+        letter-spacing: 3px;
+        font-weight: 600;
         margin-bottom: -12px;
     }
     .lobby-status {
         font-family: var(--font-heading);
-        font-size: 48px;
+        font-size: 44px;
         font-weight: 700;
         color: #fff;
         text-align: center;

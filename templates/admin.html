@@ -191,17 +191,19 @@
     .game-3col {
         flex: 1; display: grid; grid-template-columns: 340px 1fr 220px;
         gap: 16px; padding: 16px; overflow: hidden;
+        min-height: 0; /* allow grid to shrink within flex */
     }
     .game-col {
-        display: flex; flex-direction: column; overflow-y: auto;
+        display: flex; flex-direction: column;
         background: var(--bg-surface); border-radius: 12px; padding: 16px;
         border: 1px solid var(--border-color);
+        min-height: 0; overflow: hidden;
     }
     .game-col-admin { overflow-y: auto; }
     .game-col-display { padding: 8px; }
     .game-col-phone { padding: 8px; max-width: 220px; }
     .col-label { font-size: 11px; color: var(--text-muted); text-align: center; margin-bottom: 6px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
-    .preview-iframe { width: 100%; flex: 1; border: 1px solid var(--border-color); border-radius: 8px; background: #000; min-height: 200px; }
+    .preview-iframe { width: 100%; flex: 1; border: 1px solid var(--border-color); border-radius: 8px; background: #000; min-height: 300px; }
     @media (max-width: 900px) {
         .game-3col { grid-template-columns: 1fr; overflow-y: auto; }
         .game-col-phone { max-width: 100%; }
@@ -1027,84 +1029,87 @@
         </div>
     </div>
 
-    <!-- Lobby section (centered, before game starts) -->
-    <div id="game-lobby-section" class="game-center">
-        <div class="qr-instruction" data-t="admin.qr_instruction">Ask everyone to scan this code with their phone:</div>
-        <div class="qr-display"><img id="game-qr" src="" alt="QR Code"></div>
-        <div class="qr-code-text" id="game-room-code"></div>
-        <div class="qr-url" id="game-join-url"></div>
-        <div class="player-count-big" id="game-player-count">0 players joined</div>
-        <div id="lobby-player-list" style="max-width:400px; margin:12px auto 0; text-align:left;"></div>
-        <button class="big-btn big-btn-success" onclick="gameStart()" style="max-width:400px; margin-top:16px;">
-            <span class="btn-icon">&#9654;</span> <span data-t="admin.start_show">Start the Show!</span>
-        </button>
-    </div>
-
-    <!-- Playing section (3-column layout) -->
-    <div id="game-playing-section" class="game-3col" style="display:none;">
+    <!-- 3-column layout (always visible when game overlay is active) -->
+    <div id="game-playing-section" class="game-3col">
         <!-- Column 1: Admin Controls -->
         <div class="game-col game-col-admin">
-            <div class="game-slide-info" id="gp-slide-pos">Slide 1 of 10</div>
-            <div class="current-slide-preview" id="gp-preview"></div>
-
-            <!-- Frame auto-advance timer bar -->
-            <div id="gp-frame-timer" style="display:none; margin:8px 0;">
-                <div style="display:flex; justify-content:space-between; font-size:11px; color:var(--text-muted); margin-bottom:3px;">
-                    <span>Auto-advance</span>
-                    <span id="gp-frame-countdown">0s</span>
+            <!-- Lobby content (shown before game starts) -->
+            <div id="game-lobby-section">
+                <div style="text-align:center;">
+                    <div class="qr-display" style="margin:0 auto;"><img id="game-qr" src="" alt="QR Code" style="max-width:180px;"></div>
+                    <div class="qr-code-text" id="game-room-code" style="font-size:28px;"></div>
+                    <div class="qr-url" id="game-join-url" style="font-size:12px;"></div>
+                    <div class="player-count-big" id="game-player-count" style="font-size:20px; margin-top:8px;">0 players joined</div>
                 </div>
-                <div style="height:5px; background:var(--bg-body); border-radius:3px; overflow:hidden;">
-                    <div id="gp-frame-bar" style="height:100%; background:var(--accent-light-blue); border-radius:3px; transition:width 0.3s linear; width:100%;"></div>
-                </div>
-            </div>
-
-            <!-- Controls -->
-            <div class="game-controls-simple" style="margin-top:12px;">
-                <button class="big-btn big-btn-secondary" onclick="gamePrev()">
-                    <span class="btn-icon">&#9664;</span> <span data-t="admin.previous">Back</span>
-                </button>
-                <button class="big-btn big-btn-success" onclick="gameRevealOrNext()" id="btn-main-action">
-                    <span class="btn-icon">&#9654;</span> <span id="btn-main-label" data-t="admin.next">Next</span>
-                </button>
-                <button class="big-btn big-btn-secondary" onclick="gameLeaderboard()">
-                    <span class="btn-icon">&#127942;</span> <span data-t="admin.scores">Scores</span>
+                <div id="lobby-player-list" style="margin:8px 0; text-align:left;"></div>
+                <button class="big-btn big-btn-success" onclick="gameStart()" style="width:100%; margin-top:8px;">
+                    <span class="btn-icon">&#9654;</span> <span data-t="admin.start_show">Start the Show!</span>
                 </button>
             </div>
+            <!-- Playing controls (hidden during lobby, shown when game starts) -->
+            <div id="game-controls-section" style="display:none;">
+                <div class="game-slide-info" id="gp-slide-pos">Slide 1 of 10</div>
+                <div class="current-slide-preview" id="gp-preview"></div>
 
-            <!-- Keyboard shortcuts hint -->
-            <div style="margin-top:10px; display:flex; flex-wrap:wrap; gap:6px 14px; font-size:11px; color:var(--text-muted);">
-                <span><kbd style="background:rgba(255,255,255,0.1); padding:1px 6px; border-radius:4px; font-family:monospace; font-size:11px; border:1px solid rgba(255,255,255,0.15);">Space</kbd> Pause</span>
-                <span><kbd style="background:rgba(255,255,255,0.1); padding:1px 6px; border-radius:4px; font-family:monospace; font-size:11px; border:1px solid rgba(255,255,255,0.15);">R</kbd> Scores</span>
-                <span><kbd style="background:rgba(255,255,255,0.1); padding:1px 6px; border-radius:4px; font-family:monospace; font-size:11px; border:1px solid rgba(255,255,255,0.15);">&rarr;</kbd> Next</span>
-                <span><kbd style="background:rgba(255,255,255,0.1); padding:1px 6px; border-radius:4px; font-family:monospace; font-size:11px; border:1px solid rgba(255,255,255,0.15);">&larr;</kbd> Back</span>
-            </div>
-
-            <!-- Live stats -->
-            <div id="gp-stats" style="display:none; margin-top:12px;">
-                <div style="display:flex; justify-content:space-between; margin-bottom:6px;">
-                    <span style="font-size:13px; color:var(--text-muted);" data-t="admin.live_answers">Answers</span>
-                    <span style="font-size:13px; font-weight:600;" id="gp-answered-count">0 / 0</span>
+                <!-- Frame auto-advance timer bar -->
+                <div id="gp-frame-timer" style="display:none; margin:8px 0;">
+                    <div style="display:flex; justify-content:space-between; font-size:11px; color:var(--text-muted); margin-bottom:3px;">
+                        <span>Auto-advance</span>
+                        <span id="gp-frame-countdown">0s</span>
+                    </div>
+                    <div style="height:5px; background:var(--bg-body); border-radius:3px; overflow:hidden;">
+                        <div id="gp-frame-bar" style="height:100%; background:var(--accent-light-blue); border-radius:3px; transition:width 0.3s linear; width:100%;"></div>
+                    </div>
                 </div>
-                <div id="gp-stat-bars"></div>
-            </div>
 
-            <!-- Live Scoreboard -->
-            <div class="live-scoreboard" id="live-scoreboard" style="margin-top:12px;">
-                <h3>&#127942; <span data-t="admin.players">Players</span> <span class="count" id="sb-player-count">0</span></h3>
-                <div id="sb-rows"></div>
+                <!-- Controls -->
+                <div class="game-controls-simple" style="margin-top:12px;">
+                    <button class="big-btn big-btn-secondary" onclick="gamePrev()">
+                        <span class="btn-icon">&#9664;</span> <span data-t="admin.previous">Back</span>
+                    </button>
+                    <button class="big-btn big-btn-success" onclick="gameRevealOrNext()" id="btn-main-action">
+                        <span class="btn-icon">&#9654;</span> <span id="btn-main-label" data-t="admin.next">Next</span>
+                    </button>
+                    <button class="big-btn big-btn-secondary" onclick="gameLeaderboard()">
+                        <span class="btn-icon">&#127942;</span> <span data-t="admin.scores">Scores</span>
+                    </button>
+                </div>
+
+                <!-- Keyboard shortcuts hint -->
+                <div style="margin-top:10px; display:flex; flex-wrap:wrap; gap:6px 14px; font-size:11px; color:var(--text-muted);">
+                    <span><kbd style="background:rgba(255,255,255,0.1); padding:1px 6px; border-radius:4px; font-family:monospace; font-size:11px; border:1px solid rgba(255,255,255,0.15);">Space</kbd> Pause</span>
+                    <span><kbd style="background:rgba(255,255,255,0.1); padding:1px 6px; border-radius:4px; font-family:monospace; font-size:11px; border:1px solid rgba(255,255,255,0.15);">R</kbd> Scores</span>
+                    <span><kbd style="background:rgba(255,255,255,0.1); padding:1px 6px; border-radius:4px; font-family:monospace; font-size:11px; border:1px solid rgba(255,255,255,0.15);">&rarr;</kbd> Next</span>
+                    <span><kbd style="background:rgba(255,255,255,0.1); padding:1px 6px; border-radius:4px; font-family:monospace; font-size:11px; border:1px solid rgba(255,255,255,0.15);">&larr;</kbd> Back</span>
+                </div>
+
+                <!-- Live stats -->
+                <div id="gp-stats" style="display:none; margin-top:12px;">
+                    <div style="display:flex; justify-content:space-between; margin-bottom:6px;">
+                        <span style="font-size:13px; color:var(--text-muted);" data-t="admin.live_answers">Answers</span>
+                        <span style="font-size:13px; font-weight:600;" id="gp-answered-count">0 / 0</span>
+                    </div>
+                    <div id="gp-stat-bars"></div>
+                </div>
+
+                <!-- Live Scoreboard -->
+                <div class="live-scoreboard" id="live-scoreboard" style="margin-top:12px;">
+                    <h3>&#127942; <span data-t="admin.players">Players</span> <span class="count" id="sb-player-count">0</span></h3>
+                    <div id="sb-rows"></div>
+                </div>
             </div>
         </div>
 
         <!-- Column 2: Projector Screen -->
         <div class="game-col game-col-display">
             <div class="col-label">Projector Screen</div>
-            <iframe id="preview-display" title="Projector screen preview" class="preview-iframe preview-iframe-display" sandbox="allow-scripts allow-same-origin"></iframe>
+            <iframe id="preview-display" title="Projector screen preview" class="preview-iframe preview-iframe-display" sandbox="allow-scripts allow-same-origin allow-forms"></iframe>
         </div>
 
         <!-- Column 3: Player Phone -->
         <div class="game-col game-col-phone">
             <div class="col-label">Player Phone</div>
-            <iframe id="preview-player" title="Player phone preview" class="preview-iframe preview-iframe-phone" sandbox="allow-scripts allow-same-origin"></iframe>
+            <iframe id="preview-player" title="Player phone preview" class="preview-iframe preview-iframe-phone" sandbox="allow-scripts allow-same-origin allow-forms"></iframe>
         </div>
     </div>
 </div>
@@ -1351,10 +1356,10 @@
 
         if (data.state === 'lobby') {
             document.getElementById('game-lobby-section').style.display = '';
-            document.getElementById('game-playing-section').style.display = 'none';
+            document.getElementById('game-controls-section').style.display = 'none';
         } else {
             document.getElementById('game-lobby-section').style.display = 'none';
-            document.getElementById('game-playing-section').style.display = '';
+            document.getElementById('game-controls-section').style.display = '';
         }
 
         connectAdminSocket(code);
@@ -3154,7 +3159,7 @@
             document.getElementById('game-join-url').textContent = `${u.host}/play`;
         } catch(e) { document.getElementById('game-join-url').textContent = data.join_url; }
         document.getElementById('game-lobby-section').style.display = '';
-        document.getElementById('game-playing-section').style.display = 'none';
+        document.getElementById('game-controls-section').style.display = 'none';
 
         connectAdminSocket(data.code);
         loadPreviewPanels(data.code);
@@ -3193,7 +3198,7 @@
         });
         socket.on('game_started', (data) => {
             document.getElementById('game-lobby-section').style.display = 'none';
-            document.getElementById('game-playing-section').style.display = '';
+            document.getElementById('game-controls-section').style.display = '';
             updateCurrentSlide(data.slide);
         });
         socket.on('slide_changed', (data) => updateCurrentSlide(data.slide));
@@ -3208,21 +3213,6 @@
         socket.on('resumed', () => { isPaused = false; });
         socket.on('game_finished', (data) => {
             toast(t('admin.show_finished') || 'Show finished!');
-            // Show final results in admin column instead of closing overlay
-            const preview = document.getElementById('gp-preview');
-            if (preview) {
-                const lb = data?.leaderboard || [];
-                preview.innerHTML = `
-                    <div style="text-align:center; padding:16px 0;">
-                        <div style="font-size:20px; font-weight:700; margin-bottom:12px;">&#127942; ${t('admin.final_results') || 'Final Results'}</div>
-                        ${lb.map((p, i) => `<div style="display:flex; align-items:center; gap:8px; padding:6px 8px; font-size:14px;">
-                            <span style="min-width:20px; font-weight:700; color:${i===0?'#fbbf24':i===1?'#94a3b8':i===2?'#d97706':'var(--text-muted)'};">${i+1}</span>
-                            <span style="flex:1;">${p.nickname}</span>
-                            <span style="font-weight:700; color:var(--accent-light-blue);">${p.score}</span>
-                        </div>`).join('')}
-                    </div>`;
-            }
-            document.getElementById('gp-slide-pos').textContent = t('admin.show_finished') || 'Show finished!';
             stopFrameTimer();
         });
         socket.on('show_leaderboard', () => { leaderboardShowing = true; });
@@ -3378,7 +3368,25 @@
     function endGame() {
         showConfirmDialog(t('admin.end_show_confirm') || 'End the show now? This will show the final scores.', () => {
             socket?.emit('admin_end_game', {code: currentRoomCode});
+            closeGameOverlay();
         });
+    }
+
+    function closeGameOverlay() {
+        const overlay = document.getElementById('game-overlay');
+        overlay.classList.remove('active');
+        if (socket) { socket.disconnect(); socket = null; }
+        currentRoomCode = null;
+        currentGameSlide = null;
+        isPaused = false;
+        // Clear iframes
+        const df = document.getElementById('preview-display');
+        const pf = document.getElementById('preview-player');
+        if (df) df.src = 'about:blank';
+        if (pf) pf.src = 'about:blank';
+        // Refresh experience list to show new session in history
+        loadExperiences();
+        if (currentExperience) openExperience(currentExperience.id);
     }
 
     function removePlayer(playerId) {
