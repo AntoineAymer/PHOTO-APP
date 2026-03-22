@@ -2988,7 +2988,24 @@
         if (rotOverlay) rotOverlay.style.display = isVideo ? 'none' : 'flex';
 
         // Populate panel — always show original
-        document.getElementById('sdp-thumb').src = slide.media_thumbnail;
+        const thumbWrap = document.getElementById('sdp-thumb-wrap');
+        const thumbImg = document.getElementById('sdp-thumb');
+        // Remove any previous video element
+        const prevVid = thumbWrap.querySelector('video.sdp-video-preview');
+        if (prevVid) prevVid.remove();
+        if (isVideo) {
+            thumbImg.style.display = 'none';
+            const vid = document.createElement('video');
+            vid.className = 'sdp-video-preview';
+            vid.src = slide.media_url;
+            vid.controls = true;
+            vid.playsInline = true;
+            vid.style.cssText = 'width:100%; max-height:180px; border-radius:8px; background:#0f172a;';
+            thumbWrap.insertBefore(vid, thumbWrap.querySelector('#sdp-rotate-overlay'));
+        } else {
+            thumbImg.style.display = '';
+            thumbImg.src = slide.media_thumbnail;
+        }
         document.getElementById('sdp-filename').textContent = slide.media_filename;
 
         // Silhouette box: show for quiz slides
@@ -3185,20 +3202,28 @@
         // Full-screen lightbox overlay
         const overlay = document.createElement('div');
         overlay.style.cssText = 'position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.92);display:flex;align-items:center;justify-content:center;cursor:zoom-out;';
-        overlay.onclick = () => overlay.remove();
-        document.addEventListener('keydown', function esc(e) { if (e.key === 'Escape') { overlay.remove(); document.removeEventListener('keydown', esc); } });
+        const closeOverlay = () => { overlay.remove(); document.removeEventListener('keydown', escHandler); };
+        const escHandler = (e) => { if (e.key === 'Escape') closeOverlay(); };
+        overlay.onclick = closeOverlay;
+        document.addEventListener('keydown', escHandler);
+        // Close button
+        const closeBtn = document.createElement('button');
+        closeBtn.innerHTML = '&times;';
+        closeBtn.style.cssText = 'position:absolute;top:16px;right:20px;background:rgba(255,255,255,0.15);border:none;color:#fff;font-size:32px;width:48px;height:48px;border-radius:50%;cursor:pointer;z-index:10;display:flex;align-items:center;justify-content:center;';
+        closeBtn.onclick = (e) => { e.stopPropagation(); closeOverlay(); };
+        overlay.appendChild(closeBtn);
         if (slide.media_type === 'video') {
             const vid = document.createElement('video');
             vid.src = url;
             vid.controls = true;
             vid.autoplay = true;
-            vid.style.cssText = 'max-width:95vw;max-height:95vh;border-radius:8px;';
+            vid.style.cssText = 'max-width:95vw;max-height:90vh;border-radius:8px;';
             vid.onclick = (e) => e.stopPropagation();
             overlay.appendChild(vid);
         } else {
             const img = document.createElement('img');
             img.src = url;
-            img.style.cssText = 'max-width:95vw;max-height:95vh;object-fit:contain;border-radius:8px;';
+            img.style.cssText = 'max-width:95vw;max-height:90vh;object-fit:contain;border-radius:8px;';
             overlay.appendChild(img);
         }
         document.body.appendChild(overlay);
