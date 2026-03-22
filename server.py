@@ -2405,17 +2405,30 @@ async def start_frame_timer(code, duration):
     """Auto-advance frame slide after duration seconds. Send timer to admin."""
     room = active_rooms.get(code)
     if not room:
+        print(f"[TIMER] start_frame_timer: room {code} not found")
         return
     import time as _time
     deadline = int((_time.time() + duration) * 1000)
+    idx = room["current_slide_index"]
+    print(f"[TIMER] start_frame_timer code={code} slide={idx} duration={duration}s")
     await sio.emit("frame_timer", {"duration": duration, "deadline": deadline}, room=f"admin_{code}")
     await sio.emit("frame_timer", {"duration": duration, "deadline": deadline}, room=f"display_{code}")
 
+    saved_idx = idx
     async def auto_advance():
         await asyncio.sleep(duration)
-        # Only advance if still on the same slide
-        if active_rooms.get(code) is room and room["state"] == "playing":
-            await advance_slide(code, 1)
+        r = active_rooms.get(code)
+        if r is not room:
+            print(f"[TIMER] auto_advance: room replaced, skipping")
+            return
+        if room["state"] != "playing":
+            print(f"[TIMER] auto_advance: state={room['state']}, skipping")
+            return
+        if room["current_slide_index"] != saved_idx:
+            print(f"[TIMER] auto_advance: slide changed ({room['current_slide_index']} != {saved_idx}), skipping")
+            return
+        print(f"[TIMER] auto_advance: advancing from slide {saved_idx}")
+        await advance_slide(code, 1)
 
     room["timer_task"] = asyncio.create_task(auto_advance())
 

@@ -3468,8 +3468,8 @@
             updateCurrentSlide(data.slide);
         });
         socket.on('slide_changed', (data) => updateCurrentSlide(data.slide));
-        socket.on('frame_timer', (data) => startFrameTimer(data.duration, data.deadline));
-        socket.on('timer_start', (data) => startFrameTimer(data.duration, data.deadline));
+        socket.on('frame_timer', (data) => { console.log('[ADMIN] frame_timer received', data); startFrameTimer(data.duration, data.deadline); });
+        socket.on('timer_start', (data) => { console.log('[ADMIN] timer_start received', data); startFrameTimer(data.duration, data.deadline); });
         socket.on('live_stats', (data) => updateLiveStats(data));
         socket.on('reveal', (data) => {
             if (data.stats) updateLiveStats(data.stats);
@@ -3592,11 +3592,12 @@
 
     let frameTimerInterval = null;
     function startFrameTimer(duration, deadline) {
+        console.log('[TIMER] startFrameTimer called', {duration, deadline});
         const timerEl = document.getElementById('gp-frame-timer');
         const countdownEl = document.getElementById('gp-frame-countdown');
         const barEl = document.getElementById('gp-frame-bar');
         const labelEl = document.getElementById('gp-frame-label');
-        if (!timerEl) return;
+        if (!timerEl) { console.warn('[TIMER] gp-frame-timer not found!'); return; }
         clearInterval(frameTimerInterval);
         timerEl.style.display = '';
         // Label based on slide type
