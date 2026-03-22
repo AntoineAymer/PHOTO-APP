@@ -1149,6 +1149,12 @@ async def update_experience(exp_id: int, request: Request, db=Depends(get_db)):
         if key in data:
             setattr(exp, key, data[key])
     await db.commit()
+    # Also update any active room using this experience
+    for code, room in active_rooms.items():
+        if room.get("experience_id") == exp_id:
+            for key in data:
+                if key in room.get("experience", {}):
+                    room["experience"][key] = data[key]
     return {"ok": True}
 
 @app.delete("/api/experiences/{exp_id}")
@@ -1685,6 +1691,23 @@ async def _restore_room(session, db_room):
     qr.save(buf, format="PNG")
     qr_b64 = base64.b64encode(buf.getvalue()).decode()
 
+    # Restore players with scores from DB
+    p_result = await session.execute(
+        select(Player).where(Player.room_id == db_room.id)
+    )
+    db_players = p_result.scalars().all()
+    # Store as "disconnected" placeholders — players rejoin by name to reclaim
+    restored_players = {}
+    for p in db_players:
+        fake_sid = f"_restored_{p.id}"
+        restored_players[fake_sid] = {
+            "id": p.id,
+            "nickname": p.nickname,
+            "score": p.total_score or 0,
+            "connected": False,
+            "disconnected_at": 0,  # always allow reconnect for restored players
+        }
+
     active_rooms[db_room.code] = {
         "room_id": db_room.id,
         "experience_id": exp.id,
@@ -1719,7 +1742,7 @@ async def _restore_room(session, db_room):
         } for s in slides],
         "state": db_room.state.value if db_room.state else "lobby",
         "current_slide_index": db_room.current_slide_index or 0,
-        "players": {},
+        "players": restored_players,
         "is_locked": db_room.is_locked or False,
         "question_start_time": None,
         "timer_task": None,
@@ -1855,6 +1878,55 @@ async def delete_room_history(code: str, db=Depends(get_db)):
     return {"ok": True}
 
 
+@app.post("/api/test-player")
+async def add_test_player(request: Request, db=Depends(get_db)):
+    """Add a fake test player to an active room (for admin testing)."""
+    data = await request.json()
+    code = data.get("code", "").upper()
+    nickname = data.get("nickname", "Test")
+    room = active_rooms.get(code)
+    if not room:
+        raise HTTPException(404, "Room not found")
+    if len(room["players"]) >= 30:
+        raise HTTPException(400, "Room is full")
+    # Check name uniqueness
+    existing_names = {p["nickname"].lower() for p in room["players"].values()}
+    if nickname.lower() in existing_names:
+        raise HTTPException(409, "Name already taken")
+    # Create player in DB
+    result = await db.execute(select(Room).where(Room.code == code))
+    db_room = result.scalar_one_or_none()
+    if not db_room:
+        raise HTTPException(404, "Room not found in DB")
+    player = Player(room_id=db_room.id, nickname=nickname, total_score=0)
+    db.add(player)
+    await db.commit()
+    await db.refresh(player)
+    # Add to in-memory room with a fake sid
+    fake_sid = f"test_{player.id}_{secrets.token_hex(4)}"
+    room["players"][fake_sid] = {
+        "id": player.id,
+        "nickname": nickname,
+        "score": 0,
+        "connected": True,
+        "answered": False,
+    }
+    # Notify everyone
+    connected_names = [p["nickname"] for p in room["players"].values() if p["connected"]]
+    await sio.emit("player_joined", {
+        "nickname": nickname,
+        "player_count": len(connected_names),
+        "players": connected_names,
+    }, room=f"display_{code}")
+    await sio.emit("player_joined", {
+        "nickname": nickname,
+        "player_count": len(connected_names),
+        "players": connected_names,
+    }, room=f"admin_{code}")
+    await sio.emit("player_list", get_player_list(code), room=f"admin_{code}")
+    return {"ok": True, "nickname": nickname, "id": player.id}
+
+
 @app.post("/api/rooms")
 async def create_room(request: Request, db=Depends(get_db)):
     data = await request.json()
@@ -1867,8 +1939,8 @@ async def create_room(request: Request, db=Depends(get_db)):
     if custom_code:
         # Validate: 3-20 chars, alphanumeric only
         import re
-        if not re.match(r'^[A-Z0-9]{3,20}$', custom_code):
-            raise HTTPException(400, "Room code must be 3-20 alphanumeric characters")
+        if not re.match(r'^[A-Z0-9]{3,8}$', custom_code):
+            raise HTTPException(400, "Room code must be 3-8 alphanumeric characters (letters and numbers only)")
         # Check uniqueness
         existing = await db.execute(select(Room).where(Room.code == custom_code, Room.state != GameState.FINISHED))
         if existing.scalar_one_or_none():
@@ -2600,6 +2672,22 @@ async def dismiss_leaderboard(sid, data):
     await sio.emit("dismissed_leaderboard", {}, room=f"admin_{code}")
 
 @sio.event
+async def toggle_info_bar(sid, data):
+    """Toggle the persistent info bar on the display."""
+    if not is_admin(sid): return
+    code = data.get("code")
+    visible = data.get("visible", True)
+    await sio.emit("info_bar_toggle", {"visible": visible}, room=f"display_{code}")
+
+@sio.event
+async def toggle_phone_timer(sid, data):
+    """Toggle the timer visibility on player phones."""
+    if not is_admin(sid): return
+    code = data.get("code")
+    visible = data.get("visible", True)
+    await sio.emit("phone_timer_toggle", {"visible": visible}, room=f"player_{code}")
+
+@sio.event
 async def remove_player(sid, data):
     if not is_admin(sid): return
     code = data.get("code")
@@ -2661,10 +2749,11 @@ async def player_join(sid, data):
             await sio.emit("join_error", {"message": "name_taken"}, to=sid)
             return
 
-    # Check for reconnection
+    # Check for reconnection (restored players have disconnected_at=0, always allow)
     for psid, player in list(room["players"].items()):
         if player["nickname"] == nickname and not player["connected"]:
-            if time.time() - player.get("disconnected_at", 0) < 60:
+            dc_time = player.get("disconnected_at", 0)
+            if dc_time == 0 or time.time() - dc_time < 300:
                 # Reconnect
                 del room["players"][psid]
                 player["connected"] = True

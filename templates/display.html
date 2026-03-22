@@ -28,6 +28,9 @@
     /* ─ Screens ─ */
     .dscreen { display: none; position: absolute; inset: 0; }
     .dscreen.active { display: flex; }
+    /* Leave room for persistent bar at bottom */
+    .display-app:has(.persistent-bar.visible) .dscreen { padding-bottom: 56px; }
+    .display-app:has(.persistent-bar.visible) .dscreen.lobby { padding-bottom: 0; }
 
     /* ═══ LOBBY ═══ */
     .lobby {
@@ -38,13 +41,7 @@
         gap: 0;
     }
     .lobby-title {
-        font-family: var(--font-heading);
-        font-size: 64px;
-        font-weight: 800;
-        color: #fff;
-        text-shadow: 0 2px 12px rgba(0,0,0,0.4);
-        margin-bottom: 32px;
-        text-align: center;
+        display: none;
     }
     .lobby-body {
         display: flex;
@@ -95,26 +92,47 @@
         gap: 20px;
         flex: 1;
     }
+    .lobby-app-name {
+        font-family: var(--font-heading);
+        font-size: 44px;
+        font-weight: 800;
+        color: #fff;
+        font-style: italic;
+        text-shadow: 0 2px 8px rgba(0,0,0,0.3);
+    }
     .lobby-room-code {
         font-family: var(--font-heading);
-        font-size: 72px;
+        font-size: 80px;
         font-weight: 900;
         color: #12ABDB;
-        letter-spacing: 8px;
+        letter-spacing: 10px;
         text-align: center;
-        text-shadow: 0 0 30px rgba(18,171,219,0.6), 0 2px 12px rgba(0,0,0,0.5);
-        background: rgba(18,171,219,0.1);
-        border: 2px solid rgba(18,171,219,0.3);
+        text-shadow: 0 0 40px rgba(18,171,219,0.7), 0 0 80px rgba(18,171,219,0.3), 0 2px 12px rgba(0,0,0,0.5);
+        background: rgba(18,171,219,0.08);
+        border: 2px solid rgba(18,171,219,0.35);
         border-radius: 16px;
-        padding: 12px 32px;
+        padding: 16px 40px;
+    }
+    .lobby-show-name {
+        font-size: 14px;
+        color: rgba(255,255,255,0.5);
+        letter-spacing: 2px;
+        text-transform: uppercase;
+        font-weight: 600;
+    }
+    .lobby-show-name strong {
+        color: rgba(255,255,255,0.8);
+        font-weight: 700;
+        letter-spacing: 0.5px;
+        text-transform: none;
     }
     .lobby-room-code-label {
-        font-size: 16px;
-        color: rgba(255,255,255,0.7);
+        font-size: 20px;
+        color: rgba(255,255,255,0.85);
         text-transform: uppercase;
-        letter-spacing: 3px;
-        font-weight: 600;
-        margin-bottom: -12px;
+        letter-spacing: 4px;
+        font-weight: 700;
+        margin-bottom: -8px;
     }
     .lobby-status {
         font-family: var(--font-heading);
@@ -230,37 +248,39 @@
         text-shadow: 0 2px 8px rgba(0,0,0,0.4);
         line-height: 1.2;
     }
-    /* Timer row */
+    /* Timer row — prominent countdown bar */
     .game-timer-row {
         display: flex;
         align-items: center;
-        gap: 16px;
-        padding: 8px 40px 16px;
+        gap: 12px;
+        padding: 0 24px 8px;
     }
     .game-timer-seconds {
-        background: rgba(100,180,220,0.6);
-        backdrop-filter: blur(8px);
-        border-radius: 20px;
-        padding: 4px 16px;
         font-family: var(--font-heading);
-        font-size: 22px;
-        font-weight: 700;
+        font-size: 42px;
+        font-weight: 900;
         color: #fff;
-        min-width: 65px;
+        min-width: 72px;
         text-align: center;
+        line-height: 1;
+        text-shadow: 0 2px 8px rgba(0,0,0,0.4);
+        transition: color 0.3s;
     }
+    .game-timer-seconds.warning { color: #f59e0b; }
+    .game-timer-seconds.danger { color: #ef4444; animation: timerPulse 0.5s ease infinite; }
+    @keyframes timerPulse { 0%,100%{transform:scale(1)} 50%{transform:scale(1.1)} }
     .game-timer-bar-wrap {
         flex: 1;
-        height: 16px;
-        background: rgba(255,255,255,0.25);
-        border-radius: 10px;
+        height: 14px;
+        background: rgba(255,255,255,0.15);
+        border-radius: 8px;
         overflow: hidden;
     }
     .game-timer-bar-fill {
         height: 100%;
-        border-radius: 10px;
-        transition: width 0.1s linear;
-        background: linear-gradient(90deg, #f59e0b, #fff);
+        border-radius: 8px;
+        transition: width 0.2s linear;
+        background: linear-gradient(90deg, #12ABDB, #4dd0e1);
     }
     .game-timer-bar-fill.warning { background: linear-gradient(90deg, #f59e0b, #fbbf24); }
     .game-timer-bar-fill.danger { background: linear-gradient(90deg, #ef4444, #f87171); }
@@ -393,6 +413,71 @@
         50% { transform: scale(1.1); }
     }
 
+    /* ═══ CINEMA COUNTDOWN ═══ */
+    .cinema-countdown {
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        background: #0a0a0a;
+        position: relative;
+    }
+    .cinema-countdown .film-grain {
+        position: absolute; inset: 0;
+        background: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.06'/%3E%3C/svg%3E");
+        pointer-events: none;
+        opacity: 0.5;
+    }
+    .cinema-leader {
+        position: relative;
+        width: 280px; height: 280px;
+    }
+    .cinema-circle {
+        width: 280px; height: 280px;
+        border-radius: 50%;
+        border: 6px solid rgba(255,255,255,0.3);
+        position: relative;
+        display: flex; align-items: center; justify-content: center;
+    }
+    .cinema-circle svg {
+        position: absolute; top: -6px; left: -6px;
+        width: 292px; height: 292px;
+        transform: rotate(-90deg);
+    }
+    .cinema-circle svg circle {
+        fill: none;
+        stroke: #fff;
+        stroke-width: 6;
+        stroke-linecap: round;
+        stroke-dasharray: 880;
+        stroke-dashoffset: 0;
+        transition: stroke-dashoffset 1s linear;
+    }
+    .cinema-number {
+        font-family: var(--font-heading, 'Ubuntu', sans-serif);
+        font-size: 160px;
+        font-weight: 900;
+        color: #fff;
+        z-index: 1;
+        text-shadow: 0 0 40px rgba(255,255,255,0.3);
+        animation: numPop 0.3s ease-out;
+    }
+    .cinema-crosshair {
+        position: absolute;
+        width: 100%; height: 100%;
+        top: 0; left: 0;
+    }
+    .cinema-crosshair::before, .cinema-crosshair::after {
+        content: '';
+        position: absolute;
+        background: rgba(255,255,255,0.15);
+    }
+    .cinema-crosshair::before { width: 1px; height: 100%; left: 50%; }
+    .cinema-crosshair::after { width: 100%; height: 1px; top: 50%; }
+    @keyframes numPop {
+        0% { transform: scale(1.4); opacity: 0; }
+        100% { transform: scale(1); opacity: 1; }
+    }
+
     /* ═══ REVEAL ═══ */
     .reveal-container {
         position: relative;
@@ -478,24 +563,29 @@
     .pause-overlay {
         position: fixed;
         inset: 0;
-        background: rgba(0,0,0,0.7);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        z-index: 100;
-        font-size: 48px;
-        color: #fff;
-    }
-
-    /* ═══ BOTTOM BAR (persistent during game) ═══ */
-    .game-bottom-bar {
-        background: rgba(0,0,0,0.7);
+        background: rgba(0,0,0,0.75);
         backdrop-filter: blur(8px);
         display: flex;
         align-items: center;
-        padding: 12px 24px;
-        gap: 16px;
-        flex-shrink: 0;
+        justify-content: center;
+        z-index: 200;
+        font-family: var(--font-heading);
+        font-size: 64px;
+        font-weight: 800;
+        color: #fff;
+        letter-spacing: 4px;
+        text-transform: uppercase;
+    }
+    .pause-overlay::before {
+        content: '||';
+        font-size: 80px;
+        margin-right: 24px;
+        opacity: 0.6;
+    }
+
+    /* ═══ BOTTOM BAR (replaced by persistent-bar, hidden) ═══ */
+    .game-bottom-bar {
+        display: none;
     }
     .game-bottom-qr {
         width: 80px;
@@ -540,6 +630,68 @@
         color: rgba(255,255,255,0.25);
         z-index: 50;
     }
+
+    /* ═══ PERSISTENT INFO BAR (always visible during game) ═══ */
+    .persistent-bar {
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        z-index: 100;
+        display: none;
+        align-items: center;
+        gap: 14px;
+        padding: 6px 20px;
+        background: rgba(0,0,0,0.55);
+        backdrop-filter: blur(10px);
+        border-top: 1px solid rgba(255,255,255,0.08);
+        font-family: var(--font-body);
+        color: rgba(255,255,255,0.75);
+        font-size: 15px;
+        transition: opacity 0.3s;
+    }
+    .persistent-bar.visible { display: flex; }
+    .persistent-bar .pb-qr {
+        width: 42px; height: 42px;
+        background: #fff; border-radius: 6px; padding: 2px;
+        flex-shrink: 0;
+    }
+    .persistent-bar .pb-qr img { width: 100%; height: 100%; }
+    .persistent-bar .pb-join {
+        display: flex; align-items: center; gap: 8px;
+        flex-shrink: 0;
+    }
+    .persistent-bar .pb-url {
+        font-weight: 700; color: rgba(255,255,255,0.9);
+    }
+    .persistent-bar .pb-code {
+        font-family: var(--font-heading);
+        font-weight: 900;
+        font-size: 18px;
+        letter-spacing: 1.5px;
+        color: #12ABDB;
+        background: rgba(18,171,219,0.12);
+        border-radius: 6px;
+        padding: 2px 8px;
+    }
+    .persistent-bar .pb-spacer { flex: 1; }
+    .persistent-bar .pb-stats {
+        display: flex; align-items: center; gap: 16px;
+        flex-shrink: 0;
+        font-size: 14px;
+    }
+    .persistent-bar .pb-players {
+        color: rgba(255,255,255,0.65);
+    }
+    .persistent-bar .pb-players strong {
+        color: rgba(255,255,255,0.9);
+        font-weight: 700;
+    }
+    .persistent-bar .pb-top {
+        color: #fbbf24;
+        font-weight: 600;
+    }
+    .persistent-bar .pb-top .star { margin-right: 3px; }
 </style>
 {% endblock %}
 
@@ -570,7 +722,8 @@
                 <div class="lobby-qr-label" id="lobby-scan-text" data-t="display.scan_to_join">Scan to join</div>
             </div>
             <div class="lobby-info-panel">
-                <div class="lobby-room-code-label" data-t="display.enter_code">& enter code</div>
+                <div class="lobby-show-name" id="lobby-show-name"></div>
+                <div class="lobby-room-code-label" data-t="display.room_code_label">ROOM CODE</div>
                 <div class="lobby-room-code" id="lobby-room-code"></div>
                 <div class="lobby-status" id="lobby-status-text" data-t="display.beginning_soon">Beginning soon.</div>
                 <div class="lobby-player-count" id="lobby-players">0 players joined</div>
@@ -593,6 +746,18 @@
     </div>
 
     <!-- QUIZ INTRO -->
+    <!-- CINEMA COUNTDOWN -->
+    <div id="d-countdown" class="dscreen cinema-countdown">
+        <div class="film-grain"></div>
+        <div class="cinema-leader">
+            <div class="cinema-circle">
+                <svg viewBox="0 0 292 292"><circle cx="146" cy="146" r="140" id="countdown-arc"/></svg>
+                <div class="cinema-crosshair"></div>
+                <div class="cinema-number" id="countdown-number">5</div>
+            </div>
+        </div>
+    </div>
+
     <div id="d-quiz-intro" class="dscreen quiz-intro-screen">
         <div class="quiz-intro-icon" id="qi-icon"></div>
         <div class="quiz-intro-title" id="qi-title"></div>
@@ -655,6 +820,20 @@
     </div>
 
     <div class="slide-counter" id="slide-counter"></div>
+
+    <!-- PERSISTENT BOTTOM BAR (visible during all game screens) -->
+    <div class="persistent-bar" id="persistent-bar">
+        <div class="pb-qr"><img id="pb-qr-img" src="" alt="QR"></div>
+        <div class="pb-join">
+            <span id="pb-url" class="pb-url"></span>
+            <span class="pb-code" id="pb-code"></span>
+        </div>
+        <div class="pb-spacer"></div>
+        <div class="pb-stats">
+            <span class="pb-players" id="pb-players"></span>
+            <span class="pb-top" id="pb-top"></span>
+        </div>
+    </div>
 </div>
 {% endblock %}
 
@@ -669,6 +848,43 @@
     let joinUrl = '';
     let questionIndex = 0;
     let lastRevealStats = null;  // {correct, total, topPlayer, topScore}
+    let playerCount = 0;
+    let showPersistent = true;  // can be toggled by admin
+
+    function updatePersistentBar() {
+        const bar = document.getElementById('persistent-bar');
+        if (!bar) return;
+        // Populate join info
+        if (qrB64) document.getElementById('pb-qr-img').src = `data:image/png;base64,${qrB64}`;
+        if (joinUrl) {
+            try {
+                const u = new URL(joinUrl);
+                document.getElementById('pb-url').textContent = `${u.host}/play`;
+            } catch(e) { document.getElementById('pb-url').textContent = joinUrl; }
+        }
+        document.getElementById('pb-code').textContent = roomCode || '';
+        // Players
+        const pEl = document.getElementById('pb-players');
+        pEl.innerHTML = playerCount > 0 ? `<strong>${playerCount}</strong> player${playerCount !== 1 ? 's' : ''}` : '';
+        // Top scorer
+        const tEl = document.getElementById('pb-top');
+        if (lastRevealStats?.topPlayer) {
+            tEl.innerHTML = `<span class="star">&#9733;</span>${lastRevealStats.topPlayer} ${lastRevealStats.topScore}pts`;
+        } else {
+            tEl.textContent = '';
+        }
+    }
+
+    function setPersistentBarVisible(visible) {
+        const bar = document.getElementById('persistent-bar');
+        if (!bar) return;
+        if (visible && showPersistent && roomCode) {
+            bar.classList.add('visible');
+            updatePersistentBar();
+        } else {
+            bar.classList.remove('visible');
+        }
+    }
 
     function updateScoreOverlay() {
         const overlay = document.getElementById('score-overlay');
@@ -683,6 +899,9 @@
     function showDScreen(id) {
         document.querySelectorAll('.dscreen').forEach(s => s.classList.remove('active'));
         document.getElementById(id)?.classList.add('active');
+        // Show persistent bar on game screens, hide on lobby/countdown
+        const hideOn = ['d-lobby', 'd-countdown'];
+        setPersistentBarVisible(!hideOn.includes(id));
     }
 
     // ═══ Connect ═══
@@ -715,6 +934,8 @@
             qrB64 = data.qr_b64 || qrB64;
             joinUrl = data.join_url || joinUrl;
             roomCode = roomCode || data.code;
+            playerCount = data.player_count || 0;
+            updatePersistentBar();
             if (data.state === 'lobby') {
                 showLobby(data);
             } else if (data.state === 'playing' && data.current_slide) {
@@ -723,26 +944,31 @@
         });
 
         socket.on('player_joined', (data) => {
-            const pc = data.player_count;
+            playerCount = data.player_count;
             const el = document.getElementById('lobby-players');
-            el.textContent = formatPlayersJoined(pc);
+            el.textContent = formatPlayersJoined(playerCount);
             el.classList.remove('bump');
             void el.offsetWidth; // force reflow
             el.classList.add('bump');
             if (data.players) renderLobbyNames(data.players);
+            updatePersistentBar();
         });
 
         socket.on('player_update', (data) => {
+            playerCount = data.player_count;
             const el = document.getElementById('lobby-players');
-            el.textContent = formatPlayersJoined(data.player_count);
+            el.textContent = formatPlayersJoined(playerCount);
             if (data.players) renderLobbyNames(data.players);
+            updatePersistentBar();
         });
 
         socket.on('game_started', (data) => {
             experience = data.experience || experience;
             questionIndex = 0;
             sfxGameStart();
-            if (data.slide) showSlide(data.slide);
+            showCinemaCountdown(5, () => {
+                if (data.slide) showSlide(data.slide);
+            });
         });
 
         socket.on('slide_changed', (data) => {
@@ -774,16 +1000,27 @@
 
         socket.on('paused', () => {
             stopTimer();
+            // Pause any playing video
+            const vid = document.querySelector('#frame-container video');
+            if (vid && !vid.paused) vid.pause();
             document.getElementById('d-paused').style.display = 'flex';
         });
 
         socket.on('resumed', () => {
             document.getElementById('d-paused').style.display = 'none';
+            // Resume video if it was paused
+            const vid = document.querySelector('#frame-container video');
+            if (vid && vid.paused && !vid.ended) vid.play().catch(()=>{});
         });
 
         socket.on('game_finished', (data) => {
             stopTimer();
             showLeaderboard(data.leaderboard, true);
+        });
+
+        socket.on('info_bar_toggle', (data) => {
+            showPersistent = !!data.visible;
+            setPersistentBarVisible(showPersistent);
         });
     }
 
@@ -817,7 +1054,9 @@
         }
 
         if (data.experience?.name) {
-            document.getElementById('lobby-title').textContent = data.experience.name;
+            const showLabel = t('display.show_label') || 'Show';
+            document.getElementById('lobby-show-name').innerHTML =
+                `${escapeHtml(showLabel)} &middot; <strong>${escapeHtml(data.experience.name)}</strong>`;
         }
 
         const pc = data.player_count || (data.players ? data.players.length : 0);
@@ -841,6 +1080,44 @@
 
     // ═══ Show slide ═══
     let quizIntroTimer = null;
+
+    // ═══ Cinema Countdown ═══
+    function showCinemaCountdown(seconds, onComplete) {
+        showDScreen('d-countdown');
+        const numEl = document.getElementById('countdown-number');
+        const arcEl = document.getElementById('countdown-arc');
+        const circumference = 2 * Math.PI * 140; // r=140
+        arcEl.style.strokeDasharray = circumference;
+        let remaining = seconds;
+        numEl.textContent = remaining;
+        arcEl.style.transition = 'none';
+        arcEl.style.strokeDashoffset = '0';
+
+        const tick = () => {
+            // Animate arc for this second
+            const progress = (seconds - remaining + 1) / seconds;
+            requestAnimationFrame(() => {
+                arcEl.style.transition = 'stroke-dashoffset 1s linear';
+                arcEl.style.strokeDashoffset = (circumference * progress).toString();
+            });
+            remaining--;
+            if (remaining > 0) {
+                setTimeout(() => {
+                    numEl.textContent = remaining;
+                    numEl.style.animation = 'none';
+                    void numEl.offsetHeight; // reflow
+                    numEl.style.animation = 'numPop 0.3s ease-out';
+                    tick();
+                }, 1000);
+            } else {
+                setTimeout(() => {
+                    if (onComplete) onComplete();
+                }, 1000);
+            }
+        };
+        // Start first tick
+        setTimeout(() => tick(), 50);
+    }
 
     function showQuizIntro(data) {
         stopTimer();
@@ -996,7 +1273,8 @@
 
         // Reset timer display
         const timerDur = slide.question_timer || (experience && experience.default_question_timer) || 15;
-        document.getElementById('d-timer-seconds').textContent = `0:${timerDur.toString().padStart(2, '0')}`;
+        document.getElementById('d-timer-seconds').textContent = timerDur;
+        document.getElementById('d-timer-seconds').className = 'game-timer-seconds';
         document.getElementById('d-timer-fill').style.width = '100%';
         document.getElementById('d-timer-fill').className = 'game-timer-bar-fill';
         const maxPts = (experience && experience.max_points) || 100;
@@ -1054,9 +1332,10 @@
             const s = sec % 60;
 
             fill.style.width = `${pct}%`;
-            fill.className = 'game-timer-bar-fill' +
-                (pct < 25 ? ' danger' : pct < 50 ? ' warning' : '');
-            secondsEl.textContent = `${min}:${s.toString().padStart(2, '0')}`;
+            const state = pct < 25 ? 'danger' : pct < 50 ? 'warning' : '';
+            fill.className = 'game-timer-bar-fill' + (state ? ` ${state}` : '');
+            secondsEl.className = 'game-timer-seconds' + (state ? ` ${state}` : '');
+            secondsEl.textContent = sec > 0 ? sec : '0';
 
             // Points countdown
             const elapsed = duration - remaining;
@@ -1140,6 +1419,7 @@
             if (!lastRevealStats) lastRevealStats = {correct: 0, total: 0, topPlayer: null, topScore: 0};
             lastRevealStats.topPlayer = players[0].nickname;
             lastRevealStats.topScore = players[0].score;
+            updatePersistentBar();
         }
         showDScreen('d-leaderboard');
         const title = document.getElementById('lb-title');

@@ -380,7 +380,7 @@
             <div class="join-card">
                 <div class="join-label" data-t="player.enter_code">Enter the room code</div>
                 <input id="input-code" class="input input-large" type="text"
-                       maxlength="20" placeholder="ABCDE" autocomplete="off"
+                       maxlength="8" placeholder="ABCDE" autocomplete="off"
                        autocapitalize="characters" spellcheck="false"
                        data-t-placeholder="player.code_placeholder"
                        value="{{ room_code }}">
@@ -683,6 +683,10 @@
 
         socket.on('quiz_intro', (data) => { showPlayerQuizIntro(data); });
         socket.on('timer_start', (data) => { startTimer(data.duration, data.deadline); });
+        socket.on('phone_timer_toggle', (data) => {
+            const timer = document.querySelector('.player-timer');
+            if (timer) timer.style.display = data.visible ? '' : 'none';
+        });
         socket.on('answer_submitted', () => { showSubmittedScreen(); });
         socket.on('reveal', (data) => { showReveal(data); });
 
