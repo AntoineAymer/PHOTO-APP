@@ -59,6 +59,32 @@ UPLOAD_DIR = os.path.join(WORK_DIR, "uploads")
 for d in [WORK_DIR, THUMB_DIR, SILHOUETTE_DIR, WEB_MEDIA_DIR, APPLE_IMPORT_DIR, UPLOAD_DIR]:
     os.makedirs(d, exist_ok=True)
 
+# ── Sleep prevention (macOS caffeinate) ──────────────────────────────────────
+import subprocess as _subprocess
+_caffeinate_proc = None
+
+def _prevent_sleep():
+    """Start caffeinate to prevent display sleep and system sleep."""
+    global _caffeinate_proc
+    if _caffeinate_proc and _caffeinate_proc.poll() is None:
+        return  # already running
+    try:
+        _caffeinate_proc = _subprocess.Popen(
+            ["caffeinate", "-dis"],  # -d=display, -i=idle, -s=system
+            stdout=_subprocess.DEVNULL, stderr=_subprocess.DEVNULL
+        )
+        print("[CAFFEINATE] Sleep prevention started", flush=True)
+    except Exception as e:
+        print(f"[CAFFEINATE] Failed to start: {e}", flush=True)
+
+def _allow_sleep():
+    """Stop caffeinate, allow normal sleep."""
+    global _caffeinate_proc
+    if _caffeinate_proc and _caffeinate_proc.poll() is None:
+        _caffeinate_proc.terminate()
+        print("[CAFFEINATE] Sleep prevention stopped", flush=True)
+    _caffeinate_proc = None
+
 # ── Locale ───────────────────────────────────────────────────────────────────
 LOCALE_DIR = os.path.join(os.path.dirname(__file__), "locale")
 
@@ -155,6 +181,7 @@ async def lifespan(app: FastAPI):
     print(f"    Display: {SERVER_PROTO}://{SERVER_HOST}:{SERVER_PORT}/display")
     print(f"    Players: {SERVER_PROTO}://{SERVER_HOST}:{SERVER_PORT}/play\n")
     yield
+    _allow_sleep()
     await engine.dispose()
 
 # ── App ──────────────────────────────────────────────────────────────────────
@@ -2448,6 +2475,7 @@ async def start_experience(sid, data):
     if not room:
         return
     room["state"] = "playing"
+    _prevent_sleep()
     room["current_slide_index"] = 0
     slide = get_current_slide_data(code)
     admin_slide = get_current_slide_admin(code)
@@ -2685,6 +2713,7 @@ async def admin_end_game(sid, data):
         room["timer_task"].cancel()
         room["timer_task"] = None
     room["state"] = "finished"
+    _allow_sleep()
     leaderboard = get_leaderboard(code)
     await sio.emit("game_finished", {"leaderboard": leaderboard}, room=f"display_{code}")
     await sio.emit("game_finished", {"leaderboard": leaderboard}, room=f"admin_{code}")
@@ -2831,6 +2860,7 @@ async def admin_resume(sid, data):
     if not room:
         return
     room["state"] = "playing"
+    _prevent_sleep()
     # Paused during quiz intro — resume the intro countdown
     intro_remaining = room.pop("paused_intro_remaining", None)
     if intro_remaining is not None and intro_remaining > 0:
@@ -3081,6 +3111,7 @@ async def admin_break(sid, data):
     room["pre_break_state"] = room.get("state", "playing")
     room["pre_break_slide_index"] = room.get("current_slide_index", 0)
     room["state"] = "break"
+    _allow_sleep()
     # Mark all players as unclaimed (they must tap to reclaim)
     for p in room["players"].values():
         p["claimed"] = False
