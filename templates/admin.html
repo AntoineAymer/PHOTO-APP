@@ -502,6 +502,21 @@
     }
     .sg-item:hover .sg-remove-btn { display: flex; }
     .sg-item .sg-remove-btn:hover { background: #ef4444; transform: scale(1.15); }
+    .sg-item .sg-rotate-btns {
+        position: absolute; top: 4px; right: 4px; z-index: 5;
+        display: none; gap: 2px;
+    }
+    .sg-item:hover .sg-rotate-btns { display: flex; }
+    .sg-item .sg-rotate-btns button {
+        width: 22px; height: 22px; border-radius: 50%;
+        background: rgba(30,41,59,0.85); border: 2px solid rgba(255,255,255,0.7);
+        color: #fff; font-size: 11px; font-weight: 700;
+        display: flex; align-items: center; justify-content: center;
+        cursor: pointer; line-height: 1;
+        transition: transform 0.1s, background 0.15s;
+        backdrop-filter: blur(4px); padding: 0;
+    }
+    .sg-item .sg-rotate-btns button:hover { background: var(--accent-blue); transform: scale(1.15); }
     /* Quiz side-by-side: original + quiz image */
     .sg-item.sg-quiz-pair {
         grid-column: span 2; aspect-ratio: 2 / 1;
@@ -2368,8 +2383,6 @@
                                 <span id="sdp-date" style="font-size:12px; color:var(--text-muted);"></span>
                                 <button class="btn btn-secondary" id="sdp-btn-fix-date" onclick="fixSlideDate()" style="padding:2px 8px; font-size:10px; min-height:24px;">Fix date</button>
                                 <div style="flex:1;"></div>
-                                <button class="btn btn-secondary" id="sdp-btn-rotate-left" onclick="rotateSlideMedia('left')" style="padding:4px 8px; font-size:14px; min-height:32px; min-width:36px;" title="Rotate left">&#8634;</button>
-                                <button class="btn btn-secondary" id="sdp-btn-rotate-right" onclick="rotateSlideMedia('right')" style="padding:4px 8px; font-size:14px; min-height:32px; min-width:36px;" title="Rotate right">&#8635;</button>
                                 <button class="btn btn-secondary" onclick="viewMediaFull()" style="padding:4px 10px; font-size:11px; min-height:32px;" title="View full size">&#128269; View full</button>
                             </div>
                             <div id="sdp-date-status" style="display:none; font-size:11px; color:var(--text-muted); margin-bottom:6px;"></div>
@@ -2377,9 +2390,13 @@
 
                         <!-- ═══ SECTION 2: Images ═══ -->
                         <div id="sdp-images" style="display:flex; gap:8px; margin-bottom:12px;">
-                            <div style="flex:1; text-align:center;">
+                            <div style="flex:1; text-align:center; position:relative;" id="sdp-thumb-wrap">
                                 <div style="font-size:10px; color:var(--text-muted); margin-bottom:4px;">Original</div>
                                 <img id="sdp-thumb" style="width:100%; max-height:180px; border-radius:8px; object-fit:contain; background:#0f172a;">
+                                <div id="sdp-rotate-overlay" style="position:absolute; bottom:8px; right:8px; display:flex; gap:3px;">
+                                    <button onclick="rotateSlideMedia('left')" class="btn btn-secondary" style="padding:3px 6px; font-size:13px; min-height:28px; min-width:28px; background:rgba(30,41,59,0.85); backdrop-filter:blur(4px);" title="Rotate left">&#8634;</button>
+                                    <button onclick="rotateSlideMedia('right')" class="btn btn-secondary" style="padding:3px 6px; font-size:13px; min-height:28px; min-width:28px; background:rgba(30,41,59,0.85); backdrop-filter:blur(4px);" title="Rotate right">&#8635;</button>
+                                </div>
                             </div>
                             <div id="sdp-silhouette-box" style="flex:1; text-align:center; display:none;">
                                 <div style="font-size:10px; color:var(--text-muted); margin-bottom:4px;">Quiz image</div>
@@ -2658,10 +2675,11 @@
             const badge = isGame ? 'QUIZ' : (isVideo ? (s.duration ? `&#9654; ${formatDuration(s.duration)}` : '&#9654; Video') : '');
             const removeCls = showSelectedForRemoval.has(s.id) ? 'selected-remove' : '';
             const removeBtn = `<button class="sg-remove-btn" onclick="event.stopPropagation(); quickRemoveSlide(${s.id}, '${escapeHtml(s.media_filename)}')" title="Remove">&times;</button>`;
+            const rotateBtns = s.media_type === 'image' ? `<div class="sg-rotate-btns"><button onclick="event.stopPropagation(); rotateFromGrid(${s.id}, 'left')" title="Rotate left">&#8634;</button><button onclick="event.stopPropagation(); rotateFromGrid(${s.id}, 'right')" title="Rotate right">&#8635;</button></div>` : '';
             if (hasQuizPair) {
                 html += `<div class="sg-item sg-quiz-pair ${removeCls}"
                               data-slide-id="${s.id}" onclick="onSlideClick(event, ${s.id})">
-                            ${removeBtn}
+                            ${removeBtn}${rotateBtns}
                             <div class="sg-pair-wrap">
                                 <img src="${s.media_thumbnail}" alt="" loading="lazy">
                                 <div class="sg-pair-divider"></div>
@@ -2673,7 +2691,7 @@
             } else {
                 html += `<div class="sg-item ${removeCls}"
                               data-slide-id="${s.id}" onclick="onSlideClick(event, ${s.id})">
-                            ${removeBtn}
+                            ${removeBtn}${rotateBtns}
                             <img src="${s.silhouette_url || s.media_thumbnail}" alt="" loading="lazy">
                             ${isGenerating ? '<div class="sg-generating"><div style="font-size:22px; animation:spin 1.5s linear infinite;">&#9881;</div><div style="font-size:10px; margin-top:2px;">Generating...</div></div>' : ''}
                             ${badge ? `<span class="show-badge">${badge}</span>` : ''}
@@ -2688,10 +2706,13 @@
         const videos = filtered.filter(s => s.media_type === 'video').length;
         const countEl = document.getElementById('show-panel-count');
         if (countEl) {
+            const quizCount = filtered.filter(s => s.slide_type === 'game').length;
             let parts = [];
             if (photos) parts.push(`${photos} photos`);
             if (videos) parts.push(`${videos} videos`);
-            countEl.textContent = parts.length ? parts.join(', ') + ` (${filtered.length})` : `${filtered.length} items`;
+            let text = parts.length ? parts.join(', ') + ` (${filtered.length})` : `${filtered.length} items`;
+            if (quizCount) text += ` \u00B7 ${quizCount} quiz`;
+            countEl.textContent = text;
         }
         updateShowRemoveCount();
     }
@@ -2910,7 +2931,7 @@
         const zoomBtn = document.getElementById('sdp-btn-zoom');
         if (zoomBtn) zoomBtn.innerHTML = `&#128269; ${t('admin.quiz_zoom') || 'Zoom'}`;
         // 4th answer labels
-        document.querySelectorAll('#sdp-row-d-wrapper span[style*="color:#ffa726"], #sdp-edit-d-wrapper span[style*="color:#ffa726"]').forEach(el => {
+        document.querySelectorAll('#sdp-row-d-wrapper label span, #sdp-edit-d-wrapper label span').forEach(el => {
             el.textContent = t('admin.quiz_4th_label') || '4th answer (decoy trap)';
         });
         // Analyzing label
@@ -2926,10 +2947,8 @@
         const isVideo = slide.media_type === 'video';
 
         // Hide rotate buttons for video
-        const rotL = document.getElementById('sdp-btn-rotate-left');
-        const rotR = document.getElementById('sdp-btn-rotate-right');
-        if (rotL) rotL.style.display = isVideo ? 'none' : '';
-        if (rotR) rotR.style.display = isVideo ? 'none' : '';
+        const rotOverlay = document.getElementById('sdp-rotate-overlay');
+        if (rotOverlay) rotOverlay.style.display = isVideo ? 'none' : 'flex';
 
         // Populate panel — always show original
         document.getElementById('sdp-thumb').src = slide.media_thumbnail;
@@ -3003,8 +3022,9 @@
             if (isMissing || slide.answer_d) {
                 editDWrapper.style.display = '';
                 const hasD = wrongTexts[2] || slide.answer_d || '';
-                editDEnabled.checked = !!hasD;
-                editDRow.style.display = hasD ? 'flex' : 'none';
+                // For missing quiz, always tick by default
+                editDEnabled.checked = isMissing ? true : !!hasD;
+                editDRow.style.display = (isMissing || hasD) ? 'flex' : 'none';
                 editD.value = hasD || (t('admin.quiz_nobody_missing') || 'Nobody is missing');
             } else {
                 editDWrapper.style.display = 'none';
@@ -3086,26 +3106,38 @@
         if (!activeSlideId || !currentExperience) return;
         const slide = currentExperience.slides.find(s => s.id === activeSlideId);
         if (!slide) return;
-        const thumb = document.getElementById('sdp-thumb');
-        thumb.style.opacity = '0.4';
+        await _doRotate(slide.media_id, slide.media_thumbnail, activeSlideId, direction);
+    }
+
+    async function rotateFromGrid(slideId, direction) {
+        if (!currentExperience) return;
+        const slide = currentExperience.slides.find(s => s.id === slideId);
+        if (!slide) return;
+        await _doRotate(slide.media_id, slide.media_thumbnail, slideId, direction);
+    }
+
+    async function _doRotate(mediaId, thumbnailUrl, slideId, direction) {
+        // Dim all relevant images
+        const detailThumb = document.getElementById('sdp-thumb');
+        if (detailThumb && activeSlideId === slideId) detailThumb.style.opacity = '0.4';
+        const gridImgs = document.querySelectorAll(`.sg-item[data-slide-id="${slideId}"] img`);
+        gridImgs.forEach(img => img.style.opacity = '0.4');
         try {
-            const res = await fetch(`/api/media/${slide.media_id}/rotate`, {
+            const res = await fetch(`/api/media/${mediaId}/rotate`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ direction })
             });
             if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.detail || 'Failed'); }
-            // Refresh thumbnail with cache bust
             const bust = Date.now();
-            thumb.src = slide.media_thumbnail + '?t=' + bust;
-            // Also refresh the grid thumbnail
-            const gridEl = document.querySelector(`.sg-item[data-slide-id="${activeSlideId}"] img`);
-            if (gridEl) gridEl.src = slide.media_thumbnail + '?t=' + bust;
-            toast(`Rotated ${direction}`);
+            // Refresh all thumbnails for this slide
+            gridImgs.forEach(img => { img.src = thumbnailUrl + '?t=' + bust; });
+            if (detailThumb && activeSlideId === slideId) detailThumb.src = thumbnailUrl + '?t=' + bust;
         } catch (e) {
             toast('Rotate failed: ' + e.message);
         }
-        thumb.style.opacity = '1';
+        if (detailThumb && activeSlideId === slideId) detailThumb.style.opacity = '1';
+        gridImgs.forEach(img => img.style.opacity = '1');
     }
 
     function viewMediaFull() {
@@ -3526,8 +3558,10 @@
         const statusEl = document.getElementById('sdp-edit-status');
         if (res.ok) {
             statusEl.innerHTML = `<span style="color:#4caf50;">${t('admin.quiz_saved') || 'Saved!'}</span>`;
+            const savedSlideId = activeSlideId;
             await openExperience(currentExperience.id);
-            setTimeout(() => statusEl.textContent = '', 2000);
+            openSlideDetail(savedSlideId);
+            setTimeout(() => { const s = document.getElementById('sdp-edit-status'); if (s) s.textContent = ''; }, 2000);
         } else {
             statusEl.innerHTML = `<span style="color:#ef4444;">${t('admin.quiz_save_failed') || 'Failed to save'}</span>`;
         }
@@ -4076,7 +4110,9 @@
         if (!slide) return;
         currentGameSlide = slide;
         // Don't stop frame timer here — let the incoming frame_timer event restart it
-        document.getElementById('gp-slide-pos').textContent = tReplace('admin.slide_position', {current: slide.index + 1, total: slide.total}) || `Slide ${slide.index + 1} of ${slide.total}`;
+        const posText = tReplace('admin.slide_position', {current: slide.index + 1, total: slide.total}) || `Slide ${slide.index + 1} of ${slide.total}`;
+        const quizText = (slide.question_number && slide.total_questions) ? ` \u00B7 Q${slide.question_number}/${slide.total_questions}` : '';
+        document.getElementById('gp-slide-pos').textContent = posText + quizText;
         const preview = document.getElementById('gp-preview');
         const stats = document.getElementById('gp-stats');
 

@@ -901,6 +901,7 @@
     </div>
 
     <div id="d-quiz-intro" class="dscreen quiz-intro-screen">
+        <div id="qi-progress" style="position:absolute; top:24px; left:28px; font-size:18px; font-weight:700; color:rgba(255,255,255,0.6); letter-spacing:1px;"></div>
         <div class="quiz-intro-icon" id="qi-icon"></div>
         <div class="quiz-intro-title" id="qi-title"></div>
         <div class="quiz-intro-subtitle" id="qi-subtitle"></div>
@@ -921,7 +922,8 @@
             <div class="game-points-badge" id="d-points-badge">100 Points</div>
         </div>
         <div class="game-body">
-            <div class="game-silhouette-area">
+            <div class="game-silhouette-area" style="position:relative;">
+                <div id="d-quiz-progress" style="position:absolute; top:12px; left:14px; font-size:15px; font-weight:700; color:rgba(255,255,255,0.55); background:rgba(0,0,0,0.35); padding:3px 10px; border-radius:6px; letter-spacing:0.5px; z-index:2;"></div>
                 <img id="game-silhouette" src="" alt="Who is this?">
             </div>
             <div class="game-answers-area" id="game-answers-display">
@@ -1357,6 +1359,14 @@
         document.getElementById('qi-subtitle').textContent =
             t(subtitleKeys[qt]) || fallbacks[qt] || fallbacks.shadow;
 
+        // Quiz progress
+        const qp = document.getElementById('qi-progress');
+        if (data.question_index && data.total_questions) {
+            qp.textContent = `Q${data.question_index}/${data.total_questions}`;
+        } else {
+            qp.textContent = '';
+        }
+
         let remaining = data.duration || 3;
         const cdEl = document.getElementById('qi-countdown');
         cdEl.textContent = remaining;
@@ -1456,6 +1466,15 @@
         const silImg = document.getElementById('game-silhouette');
         silImg.onerror = () => { silImg.style.display = 'none'; };
         silImg.src = slide.silhouette_url || slide.media_url;
+
+        // Quiz progress badge on image
+        const qProg = document.getElementById('d-quiz-progress');
+        if (slide.question_number && slide.total_questions) {
+            qProg.textContent = `Q${slide.question_number}/${slide.total_questions}`;
+            qProg.style.display = '';
+        } else {
+            qProg.style.display = 'none';
+        }
 
         // Question text — varies by quiz type
         const qt = slide.quiz_type || 'shadow';

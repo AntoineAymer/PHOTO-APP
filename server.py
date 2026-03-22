@@ -2244,6 +2244,12 @@ def get_player_list(code):
     players.sort(key=lambda x: x["score"], reverse=True)
     return players
 
+def _quiz_progress(room, idx):
+    """Return (question_number, total_questions) for quiz progress tracking."""
+    total_q = sum(1 for s in room["slides"] if s["slide_type"] == "game")
+    current_q = sum(1 for s in room["slides"][:idx + 1] if s["slide_type"] == "game") if room["slides"][idx]["slide_type"] == "game" else 0
+    return current_q, total_q
+
 def get_current_slide_data(code):
     room = active_rooms.get(code)
     if not room:
@@ -2252,10 +2258,13 @@ def get_current_slide_data(code):
     if idx >= len(room["slides"]):
         return None
     slide = room["slides"][idx]
+    q_num, q_total = _quiz_progress(room, idx)
     return {
         **slide,
         "index": idx,
         "total": len(room["slides"]),
+        "question_number": q_num,
+        "total_questions": q_total,
         "correct_answer": None,  # Don't send to players
         "_relaxed": bool(room.get("experience", {}).get("relaxed_mode")),
     }
@@ -2268,10 +2277,13 @@ def get_current_slide_admin(code):
     if idx >= len(room["slides"]):
         return None
     slide = room["slides"][idx]
+    q_num, q_total = _quiz_progress(room, idx)
     return {
         **slide,
         "index": idx,
         "total": len(room["slides"]),
+        "question_number": q_num,
+        "total_questions": q_total,
     }
 
 def get_current_slide_player(code):
@@ -2285,10 +2297,13 @@ def get_current_slide_player(code):
     slide = room["slides"][idx]
     mode = room.get("experience", {}).get("player_display_mode", "question_and_choices")
 
+    q_num, q_total = _quiz_progress(room, idx)
     player_slide = {
         "slide_type": slide["slide_type"],
         "index": idx,
         "total": len(room["slides"]),
+        "question_number": q_num,
+        "total_questions": q_total,
         "correct_answer": None,
         "_relaxed": bool(room.get("experience", {}).get("relaxed_mode")),
         "_display_mode": mode,
@@ -2531,10 +2546,13 @@ async def advance_slide(code, direction):
         intro_dur = room.get("experience", {}).get("quiz_intro_duration", 3)
         if intro_dur > 0:
             room["intro_start_time"] = time.time()
+            total_q = sum(1 for s in room["slides"] if s["slide_type"] == "game")
+            current_q = sum(1 for s in room["slides"][:new_idx + 1] if s["slide_type"] == "game")
             intro_data = {
                 "quiz_type": slide.get("quiz_type") or "shadow",
                 "duration": intro_dur,
-                "question_index": sum(1 for s in room["slides"][:new_idx + 1] if s["slide_type"] == "game"),
+                "question_index": current_q,
+                "total_questions": total_q,
             }
             await sio.emit("quiz_intro", intro_data, room=f"display_{code}")
             await sio.emit("quiz_intro", intro_data, room=f"player_{code}")

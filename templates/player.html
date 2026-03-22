@@ -889,10 +889,15 @@
         photoImg.style.transition = '';
         photoImg.style.opacity = '1';
 
-        // Question badge
-        document.getElementById('question-badge').textContent =
-            mode === 'choices_only' ? '' :
-            (tReplace('player.question_number', {n: questionNumber}) || `Question ${questionNumber}`);
+        // Question badge with quiz progress
+        const qBadge = document.getElementById('question-badge');
+        if (mode === 'choices_only') {
+            qBadge.textContent = '';
+        } else {
+            const qLabel = tReplace('player.question_number', {n: slide.question_number || questionNumber}) || `Question ${slide.question_number || questionNumber}`;
+            const progress = (slide.question_number && slide.total_questions) ? ` \u00B7 ${slide.question_number}/${slide.total_questions}` : '';
+            qBadge.textContent = qLabel + progress;
+        }
 
         // Timer / relaxed mode
         const timerContainer = document.getElementById('timer-container');
